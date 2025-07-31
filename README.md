@@ -2,8 +2,7 @@
 
 <img src="logo.png" width="128px" alt="logo">
 
-A lightweight real-time Pub-Sub library for Go. Ideal for transient data scenarios like live dashboards, gaming events, or short-lived notifications. No persistence, no delivery guarantees—just fast
-fire-and-forget communication.
+Lightweight, real-time Pub/Sub for Go—perfect for transient data flows like live dashboards, game events, short-lived alerts, and real-time streaming-media packet fan-out. It’s pure fire-and-forget: zero persistence, no delivery guarantees, just ultra-fast one-way messaging.
 
 ---
 
