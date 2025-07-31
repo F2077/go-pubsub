@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/F2077/go-pubsub"
+	"github.com/F2077/go-pubsub/pubsub"
 	"time"
 )
 
