@@ -35,6 +35,6 @@ func main() {
 	case msg := <-sub.Ch:
 		fmt.Println("Received:", msg) // Output: "CPU over 90%!"
 	case err := <-sub.ErrCh:
-		fmt.Println("Error:", err) // e.g., timeout
+		fmt.Println("Error:", err)
 	}
 }
