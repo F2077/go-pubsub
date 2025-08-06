@@ -2,7 +2,7 @@
 
 <img src="logo.png" width="128px" alt="logo">
 
-Lightweight, real-time Pub/Sub for Go—perfect for transient data flows like live dashboards, game events, short-lived alerts, and real-time streaming-media packet fan-out. It’s pure fire-and-forget: zero persistence, no delivery guarantees, just ultra-fast one-way messaging.
+Lightweight, in-process Pub/Sub for Go—perfect for transient data flows like real-time streaming-media packets. It’s pure fire-and-forget: zero persistence, no delivery guarantees, just ultra-fast, one-way messaging.
 
 ---
 
