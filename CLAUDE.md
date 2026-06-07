@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `go-pubsub` is a lightweight, in-process Pub/Sub library for Go. It is pure fire-and-forget: zero persistence, no delivery guarantees, designed for transient, low-latency data flows (real-time streaming-media packets, gaming events, live signals). Full subscriber channels drop messages silently — there is no backpressure.
 
-Module path: `github.com/F2077/go-pubsub` (Go 1.21, generics-based).
+Module path: `github.com/F2077/go-pubsub` (Go 1.24, generics-based).
 Direct dependencies: `github.com/google/uuid`, `github.com/stretchr/testify`.
 
 ## Common commands

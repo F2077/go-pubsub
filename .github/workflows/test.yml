@@ -23,9 +23,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          # Pin to the lowest supported version per go.mod (currently 1.21);
+          # Pin to the lowest supported version per go.mod (currently 1.24);
           # bump this whenever go.mod's `go` directive moves up.
-          go-version: '1.21'
+          go-version: '1.24'
           cache: true
 
       - name: Verify go.mod is tidy
