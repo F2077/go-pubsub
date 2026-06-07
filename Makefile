@@ -52,6 +52,24 @@ cover: ## Run race tests with coverage; write cover.out + cover.html
 bench: ## Run the README-cited benchmarks
 	$(GO) test -bench=. -benchmem -run=^$$ ./pubsub/...
 
+# ---- Profiling & benchmarking toolchain -----------------------------------
+# Local-only. Requires Go 1.24+ for the `tool` directive in go.mod. Run
+# `make profile-install` once after `go mod tidy` to materialize
+# benchstat in $(go env GOBIN) (default $GOPATH/bin). All targets write
+# their artifacts under .profile/ (gitignored).
+
+PROFILE_DIR   ?= .profile
+PROFILE_BENCH ?= BenchmarkPublishSingleSubscriber   # override on CLI
+
+$(PROFILE_DIR):
+	@mkdir -p $@
+
+.PHONY: profile-install profile-cpu profile-mem profile-mutex \
+        profile-trace flamegraph benchstat
+
+profile-install: ## Install benchstat from go.mod tool directive
+	$(GO) install tool
+
 fmt: ## Fail if any tracked Go file is not gofmt-clean
 	@test -z $$($(GO)fmt -l $$(git ls-files '*.go')) \
 		|| ($(GO)fmt -d $$(git ls-files '*.go'); exit 1)
