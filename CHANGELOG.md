@@ -37,6 +37,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   mis-formatted).
 - Internal `slog` messages translated to English to match
   `CLAUDE.md`'s user-visible-string rule.
+- `ErrSubscriptionCapacityExceeded` message string now reads
+  `"subscription capacity exceeded"` (was the leftover
+  `"subscription capacity exceed"` from the rename).
+
+### Changed (test-side cleanup)
+- Test files now share a single `testLogger()` / `benchLogger()` pair
+  in `pubsub/helpers_test.go`; ~19 inline `slog.New(...)` duplicates
+  collapsed. No behavior change.
+- `BenchmarkBrokerTopics` no longer registers a `defer` per
+  subscription in its setup loop — it now uses the same
+  `b.Cleanup` pattern as the rest of `bench_test.go`.
+- `TestBrokerOptionValidation` (table test) replaces
+  `TestWithLoggerNil` + `TestWithIdEmpty`, and asserts
+  `errors.Is(err, ErrLoggerNil / ErrBrokerIdEmpty)` so the
+  exported sentinels are no longer dead.
+- `TestSubscriberClosedPostConditions` replaces
+  `TestSubscribeAfterClose` + `TestSubscriberCloseTwice` with
+  a single test of subtests.
+- README bench table refreshed from the post-simplify
+  `make bench` run.
 
 ### Removed
 - GPL-3.0 license. The project is now MIT.

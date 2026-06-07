@@ -130,20 +130,26 @@ make bench     # run the README-cited benchmarks
 
 ## Benchmark Results
 
-_All benchmarks run on_ **goos: windows**, **goarch: amd64**, **pkg: github.com/F2077/go-pubsub**, **cpu: Intel(R) Core(TM) i7-10700F CPU @ 2.90GHz**
+_All benchmarks run with_ `go test -bench=. -benchmem -run=^$ ./pubsub/...` _via_ `make bench`. _Numbers below are from the post-simplify pass on_ **goos: linux**, **goarch: amd64**, **pkg: github.com/F2077/go-pubsub**, **cpu: Intel(R) Core(TM) Ultra 5 125H**.
 
-| Benchmark                                        | Iterations |           ns/op | B/op | allocs/op |
-|--------------------------------------------------|-----------:|----------------:|-----:|----------:|
-| BenchmarkPublishSingleSubscriber-16              |  5 188 107 |     233.0 ns/op |   96 |         2 |
-| BenchmarkMultipleSubscribers-16                  |    143 594 |     8 089 ns/op |   96 |         2 |
-| BenchmarkMultiPublisherSingleSubscriber-16       |    259 663 |     4 732 ns/op |  776 |        21 |
-| BenchmarkMultiPublisherMultipleSubscribers-16    |     67 593 |    17 823 ns/op |  776 |        21 |
-| BenchmarkUltraLargeSubscribersSinglePublisher-16 |        471 | 2 846 125 ns/op |   96 |         2 |
-| BenchmarkPublishChannelSizes/Small-16            |  5 271 156 |     230.2 ns/op |   96 |         2 |
-| BenchmarkPublishChannelSizes/Medium-16           |  5 134 640 |     229.5 ns/op |   96 |         2 |
-| BenchmarkPublishChannelSizes/Large-16            |  5 238 266 |     231.8 ns/op |   96 |         2 |
-| BenchmarkPublishWithTimeout-16                   |  1 345 124 |     861.1 ns/op |  507 |         7 |
-| BenchmarkHighLoadParallel-16                     |     14 728 |    83 785 ns/op |  100 |         2 |
+| Benchmark                                          | Iterations |             ns/op |  B/op | allocs/op |
+|----------------------------------------------------|-----------:|------------------:|------:|----------:|
+| BenchmarkPublishSingleSubscriber-18                |  1 496 839 |       163.4 ns/op |    96 |         2 |
+| BenchmarkMultipleSubscribers-18                    |     42 598 |       5 792 ns/op |    96 |         2 |
+| BenchmarkMultiPublisherSingleSubscriber-18         |     29 958 |       8 006 ns/op |   776 |        21 |
+| BenchmarkMultiPublisherMultipleSubscribers-18      |     13 888 |      16 965 ns/op |   776 |        21 |
+| BenchmarkUltraLargeSubscribersSinglePublisher-18   |         80 |   2 909 316 ns/op |    96 |         2 |
+| BenchmarkPublishChannelSizes/Small-18              |  1 497 117 |       164.2 ns/op |    96 |         2 |
+| BenchmarkPublishChannelSizes/Medium-18             |  1 491 878 |       160.9 ns/op |    96 |         2 |
+| BenchmarkPublishChannelSizes/Large-18              |  1 490 223 |       160.7 ns/op |    96 |         2 |
+| BenchmarkPublishWithTimeout-18                     |    335 841 |       700.7 ns/op |   526 |         7 |
+| BenchmarkHighLoadParallel-18                       |      1 963 |     111 478 ns/op |   103 |         2 |
+| BenchmarkSubscribes-18                             |      2 268 |      93 076 ns/op | 104596 |       973 |
+| BenchmarkBrokerTopics/10-18                        |  1 000 000 |       224.5 ns/op |   256 |         3 |
+| BenchmarkBrokerTopics/100-18                       |    184 555 |       1 196 ns/op |  1888 |         3 |
+| BenchmarkBrokerTopics/1000-18                      |     20 889 |      11 295 ns/op | 16480 |         3 |
+| BenchmarkStructPayload-18                          |  1 468 370 |       164.0 ns/op |    96 |         2 |
+| BenchmarkPublishAutoCreateTopic-18                 |    618 542 |       722.3 ns/op |   418 |         8 |
 
 ---
 
