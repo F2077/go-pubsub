@@ -16,9 +16,10 @@ const DefaultCapacity = uint32(8192)
 
 // ErrSubscriptionCapacityExceeded is returned by Publish and Subscribe when
 // the broker already holds DefaultCapacity (or the value passed to
-// WithCapacity) topics. The error wraps the cap that was exceeded, so
-// callers can recover the limit via errors.Is and a custom Unwrap if needed.
-var ErrSubscriptionCapacityExceeded = errors.New("subscription capacity exceed")
+// WithCapacity) topics. The cap value is included in the message text
+// returned by fmt.Errorf at the call site; the error itself does not
+// currently expose the cap programmatically — use errors.Is to detect.
+var ErrSubscriptionCapacityExceeded = errors.New("subscription capacity exceeded")
 
 // ErrLoggerNil is returned by WithLogger when a nil *slog.Logger is passed.
 var ErrLoggerNil = errors.New("logger cannot be nil")

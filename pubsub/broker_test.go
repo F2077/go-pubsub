@@ -1,37 +1,35 @@
 package pubsub
 
 import (
-	"log/slog"
-	"os"
+	"errors"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
 
-// testLogger constructs a slog.Logger that writes to stderr at Info level.
-// Mirrors the convention in the test suite: keep log noise out of test output
-// without silencing information useful for diagnosis.
-func testLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-}
-
 // --- Broker options: validation error paths -------------------------------
 
-// TestWithLoggerNil verifies the WithLogger option rejects a nil logger
-// rather than crashing the broker on first log call.
-func TestWithLoggerNil(t *testing.T) {
-	_, err := NewBroker[string](WithLogger[string](nil))
-	if err == nil {
-		t.Fatal("expected error for nil logger, got nil")
+// TestBrokerOptionValidation exercises every validating BrokerOption's
+// rejection path through errors.Is, so the sentinel errors are not
+// dead code.
+func TestBrokerOptionValidation(t *testing.T) {
+	cases := []struct {
+		name    string
+		opt     BrokerOption[string]
+		wantErr error
+	}{
+		{"nil logger", WithLogger[string](nil), ErrLoggerNil},
+		{"empty id", WithId[string](""), ErrBrokerIdEmpty},
 	}
-}
-
-// TestWithIdEmpty verifies WithId rejects an empty id.
-func TestWithIdEmpty(t *testing.T) {
-	_, err := NewBroker[string](WithId[string](""))
-	if err == nil {
-		t.Fatal("expected error for empty id, got nil")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NewBroker[string](tc.opt)
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("expected %v, got %v", tc.wantErr, err)
+			}
+		})
 	}
 }
 
@@ -92,13 +90,10 @@ func TestBrokerTopics_ReflectsSubscribe(t *testing.T) {
 	if len(topics) != 2 {
 		t.Fatalf("expected 2 topics, got %d (%v)", len(topics), topics)
 	}
-	// Topics() returns an unordered slice; check both names are present.
-	seen := make(map[string]bool, len(topics))
-	for _, topic := range topics {
-		seen[topic] = true
-	}
-	if !seen["alpha"] || !seen["beta"] {
-		t.Fatalf("expected alpha and beta in topics, got %v", topics)
+	// Topics() returns an unordered slice; sort it before comparing.
+	sort.Strings(topics)
+	if want := []string{"alpha", "beta"}; len(topics) == 2 && (topics[0] != want[0] || topics[1] != want[1]) {
+		t.Fatalf("expected %v, got %v", want, topics)
 	}
 }
 
@@ -107,8 +102,7 @@ func TestBrokerTopics_ReflectsSubscribe(t *testing.T) {
 // TestBasicPubSub tests the canonical happy path: create a broker, attach
 // a publisher and a subscriber, publish one message, read it back.
 func TestBasicPubSub(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	broker, err := NewBroker[string](WithLogger[string](logger))
+	broker, err := NewBroker[string](WithLogger[string](testLogger()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,8 +142,7 @@ func TestBasicPubSub(t *testing.T) {
 // TestMultipleSubscribers verifies fan-out: a single Publish reaches every
 // Subscriber attached to the topic.
 func TestMultipleSubscribers(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	broker, err := NewBroker[string](WithLogger[string](logger))
+	broker, err := NewBroker[string](WithLogger[string](testLogger()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,8 +188,7 @@ func TestMultipleSubscribers(t *testing.T) {
 // TestMultiPublisherSingleSubscriber verifies fan-in: many Publishers
 // feeding a single Subscriber all arrive (within channel capacity).
 func TestMultiPublisherSingleSubscriber(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	broker, err := NewBroker[int](WithLogger[int](logger))
+	broker, err := NewBroker[int](WithLogger[int](testLogger()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,8 +250,7 @@ Loop:
 // TestMultiPublisherMultipleSubscribers verifies the full mesh: many
 // Publishers, many Subscribers, one topic.
 func TestMultiPublisherMultipleSubscribers(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	broker, err := NewBroker[int](WithLogger[int](logger))
+	broker, err := NewBroker[int](WithLogger[int](testLogger()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +264,6 @@ func TestMultiPublisherMultipleSubscribers(t *testing.T) {
 	// 创建多个订阅者（不立即关闭——每个订阅者必须保持订阅才能收到消息）
 	numSubscribers := 3
 	subs := make([]*Subscription[int], 0, numSubscribers)
-	subscribers := make([]*Subscriber[int], 0, numSubscribers)
 	for i := 0; i < numSubscribers; i++ {
 		subscriber := NewSubscriber[int](broker)
 		sub, err := subscriber.Subscribe("multi_pub_multi_sub", WithChannelSize[int](Medium))
@@ -281,7 +271,6 @@ func TestMultiPublisherMultipleSubscribers(t *testing.T) {
 			t.Fatal(err)
 		}
 		subs = append(subs, sub)
-		subscribers = append(subscribers, subscriber)
 	}
 	t.Cleanup(func() {
 		for _, sub := range subs {
@@ -331,23 +320,16 @@ func TestMultiPublisherMultipleSubscribers(t *testing.T) {
 		if received != totalMessages {
 			t.Fatalf("subscriber %d: expected %d messages, received %d", i+1, totalMessages, received)
 		}
-		_ = subscribers[i] // 保留引用以避免 lint 警告
 	}
 }
 
-// packet is a small struct used to confirm the generic T parameter works
-// with non-primitive payload types.
-type packet struct {
-	seq  int
-	body string
-}
-
 // TestStructPayload verifies a struct payload round-trips intact through
-// publish → deliver → receive.
+// publish → deliver → receive. Reuses benchPacket from bench_test.go to
+// avoid two structurally identical test fixtures.
 func TestStructPayload(t *testing.T) {
-	broker, _ := NewBroker[packet]()
-	pub := NewPublisher[packet](broker)
-	sub := NewSubscriber[packet](broker)
+	broker, _ := NewBroker[benchPacket]()
+	pub := NewPublisher[benchPacket](broker)
+	sub := NewSubscriber[benchPacket](broker)
 
 	s, err := sub.Subscribe("pkt")
 	if err != nil {
@@ -355,7 +337,7 @@ func TestStructPayload(t *testing.T) {
 	}
 	defer func() { _ = s.Close() }()
 
-	want := packet{seq: 7, body: "alpha"}
+	want := benchPacket{seq: 7, body: "alpha"}
 	if err := pub.Publish("pkt", want); err != nil {
 		t.Fatal(err)
 	}

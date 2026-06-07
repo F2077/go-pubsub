@@ -2,8 +2,6 @@ package pubsub
 
 import (
 	"errors"
-	"log/slog"
-	"os"
 	"testing"
 	"time"
 
@@ -26,30 +24,27 @@ func TestSubscriberAccessors(t *testing.T) {
 
 // --- Subscriber lifecycle -------------------------------------------------
 
-// TestSubscribeAfterClose verifies that subscribing on a closed subscriber
-// returns ErrSubscriberClosed. This is the documented contract.
-func TestSubscribeAfterClose(t *testing.T) {
+// TestSubscriberClosedPostConditions verifies the documented behavior of
+// every method on a subscriber that has already been Closed.
+func TestSubscriberClosedPostConditions(t *testing.T) {
 	broker, _ := NewBroker[string]()
 	sub := NewSubscriber[string](broker)
 	if err := sub.Close(); err != nil {
 		t.Fatalf("first Close() should succeed, got %v", err)
 	}
-	_, err := sub.Subscribe("anything")
-	if !errors.Is(err, ErrSubscriberClosed) {
-		t.Fatalf("expected ErrSubscriberClosed, got %v", err)
-	}
-}
 
-// TestSubscriberCloseTwice verifies a second Close() returns ErrSubscriberClosed.
-func TestSubscriberCloseTwice(t *testing.T) {
-	broker, _ := NewBroker[string]()
-	sub := NewSubscriber[string](broker)
-	if err := sub.Close(); err != nil {
-		t.Fatalf("first Close: %v", err)
-	}
-	if err := sub.Close(); !errors.Is(err, ErrSubscriberClosed) {
-		t.Fatalf("second Close: expected ErrSubscriberClosed, got %v", err)
-	}
+	t.Run("Subscribe returns ErrSubscriberClosed", func(t *testing.T) {
+		_, err := sub.Subscribe("anything")
+		if !errors.Is(err, ErrSubscriberClosed) {
+			t.Fatalf("expected ErrSubscriberClosed, got %v", err)
+		}
+	})
+
+	t.Run("Close returns ErrSubscriberClosed", func(t *testing.T) {
+		if err := sub.Close(); !errors.Is(err, ErrSubscriberClosed) {
+			t.Fatalf("second Close: expected ErrSubscriberClosed, got %v", err)
+		}
+	})
 }
 
 // TestSubscriberCloseUnsubscribesAll verifies that Close() on a multi-topic
@@ -90,8 +85,7 @@ func TestSubscriberCloseUnsubscribesAll(t *testing.T) {
 // TestUnsubscribe verifies that closing a subscription before publishing
 // drops the message: the channel is closed, not silently filled.
 func TestUnsubscribe(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	broker, err := NewBroker[string](WithLogger[string](logger))
+	broker, err := NewBroker[string](WithLogger[string](testLogger()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,8 +134,7 @@ func TestUnsubscribe(t *testing.T) {
 // delivers ErrSubscriptionTimeout to ErrCh after the configured idle period
 // when no Publish happens.
 func TestSubscriptionTimeout(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	broker, err := NewBroker[string](WithLogger[string](logger))
+	broker, err := NewBroker[string](WithLogger[string](testLogger()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,8 +224,7 @@ publish:
 // the per-topic channel can hold, the surplus is dropped (fire-and-forget),
 // not blocking the publisher and not exceeding the channel capacity.
 func TestChannelOverflow(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	broker, err := NewBroker[int](WithLogger[int](logger))
+	broker, err := NewBroker[int](WithLogger[int](testLogger()))
 	if err != nil {
 		t.Fatal(err)
 	}

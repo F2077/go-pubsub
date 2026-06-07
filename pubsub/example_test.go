@@ -42,13 +42,15 @@ func ExampleWithChannelSize() {
 	broker, _ := pubsub.NewBroker[int]()
 	subscriber := pubsub.NewSubscriber[int](broker)
 
-	sub, _ := subscriber.Subscribe("metrics", pubsub.WithChannelSize[int](pubsub.Huge))
+	// Block keeps Publishes blocking on send, which lets us see the buffer
+	// depth in action: we publish first, then read.
+	sub, _ := subscriber.Subscribe("metrics", pubsub.WithChannelSize[int](pubsub.Single))
 	defer func(sub *pubsub.Subscription[int]) { _ = sub.Close() }(sub)
 
-	// Sub.Ch is a <-chan int; reads block until a publish arrives.
-	_ = sub
-	fmt.Println("channel size:", int(pubsub.Huge))
-	// Output: channel size: 10000
+	publisher := pubsub.NewPublisher[int](broker)
+	_ = publisher.Publish("metrics", 42)
+	fmt.Println(<-sub.Ch)
+	// Output: 42
 }
 
 // ExampleWithTimeout shows the sliding-timeout subscription: the subscription

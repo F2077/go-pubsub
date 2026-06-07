@@ -3,7 +3,6 @@ package pubsub
 import (
 	"errors"
 	"testing"
-	"time"
 )
 
 // --- Publisher accessors --------------------------------------------------
@@ -38,10 +37,6 @@ func TestPublishAutoCreatesSubscription(t *testing.T) {
 	if err := pub.Publish("new-topic", "hello"); err != nil {
 		t.Fatalf("expected nil error, got %v", err)
 	}
-	// Wait briefly for the async reaper to remove the empty topic.
-	// (Reaping is fire-and-forget — we don't strictly need to assert it.)
-	time.Sleep(50 * time.Millisecond)
-	_ = broker.Topics() // touch the API to confirm it does not panic on empty
 }
 
 // TestPublishCapacityExceeded verifies that creating a topic beyond the

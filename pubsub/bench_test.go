@@ -2,8 +2,6 @@ package pubsub
 
 import (
 	"fmt"
-	"log/slog"
-	"os"
 	"runtime"
 	"sync"
 	"testing"
@@ -12,8 +10,7 @@ import (
 
 // BenchmarkPublishSingleSubscriber 基准测试：单个订阅者下的发布性能
 func BenchmarkPublishSingleSubscriber(b *testing.B) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	broker, _ := NewBroker[int](WithLogger[int](logger))
+	broker, _ := NewBroker[int](WithLogger[int](benchLogger()))
 	pub := NewPublisher(broker)
 	sub, _ := NewSubscriber[int](broker).Subscribe("benchmark_topic")
 	defer func(sub *Subscription[int]) {
@@ -36,8 +33,7 @@ func BenchmarkPublishSingleSubscriber(b *testing.B) {
 
 // BenchmarkMultipleSubscribers 基准测试：多个订阅者下的发布性能
 func BenchmarkMultipleSubscribers(b *testing.B) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	broker, _ := NewBroker[int](WithLogger[int](logger))
+	broker, _ := NewBroker[int](WithLogger[int](benchLogger()))
 	pub := NewPublisher(broker)
 	const numSubs = 100
 
@@ -72,8 +68,7 @@ func BenchmarkMultipleSubscribers(b *testing.B) {
 
 // BenchmarkMultiPublisherSingleSubscriber 基准测试：多个发布者对单个订阅者的发布性能
 func BenchmarkMultiPublisherSingleSubscriber(b *testing.B) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	broker, _ := NewBroker[int](WithLogger[int](logger))
+	broker, _ := NewBroker[int](WithLogger[int](benchLogger()))
 	const numPubs = 5
 
 	// 多个发布者
@@ -111,8 +106,7 @@ func BenchmarkMultiPublisherSingleSubscriber(b *testing.B) {
 
 // BenchmarkMultiPublisherMultipleSubscribers 基准测试：多个发布者和多个订阅者
 func BenchmarkMultiPublisherMultipleSubscribers(b *testing.B) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	broker, _ := NewBroker[int](WithLogger[int](logger))
+	broker, _ := NewBroker[int](WithLogger[int](benchLogger()))
 	const (
 		numPubs = 5
 		numSubs = 50
@@ -163,8 +157,7 @@ func BenchmarkMultiPublisherMultipleSubscribers(b *testing.B) {
 
 // BenchmarkUltraLargeSubscribersSinglePublisher 基准测试：超大规模订阅者场景
 func BenchmarkUltraLargeSubscribersSinglePublisher(b *testing.B) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	broker, _ := NewBroker[int](WithLogger[int](logger))
+	broker, _ := NewBroker[int](WithLogger[int](benchLogger()))
 	pub := NewPublisher(broker)
 
 	const numSubs = 10000
@@ -208,8 +201,7 @@ func BenchmarkPublishChannelSizes(b *testing.B) {
 
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
-			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-			broker, _ := NewBroker[int](WithLogger[int](logger))
+			broker, _ := NewBroker[int](WithLogger[int](benchLogger()))
 			pub := NewPublisher(broker)
 			sub, _ := NewSubscriber[int](broker).
 				Subscribe("size_bench", WithChannelSize[int](c.size))
@@ -231,8 +223,7 @@ func BenchmarkPublishChannelSizes(b *testing.B) {
 
 // BenchmarkPublishWithTimeout 测试 Publishing + Timeout 场景
 func BenchmarkPublishWithTimeout(b *testing.B) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	broker, _ := NewBroker[string](WithLogger[string](logger))
+	broker, _ := NewBroker[string](WithLogger[string](benchLogger()))
 	pub := NewPublisher(broker)
 	sub, _ := NewSubscriber[string](broker).
 		Subscribe("timeout_bench", WithTimeout[string](50*time.Millisecond))
@@ -255,8 +246,7 @@ func BenchmarkPublishWithTimeout(b *testing.B) {
 
 // BenchmarkHighLoadParallel 并行高负载测试：大量并发发布
 func BenchmarkHighLoadParallel(b *testing.B) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	broker, _ := NewBroker[int](WithLogger[int](logger))
+	broker, _ := NewBroker[int](WithLogger[int](benchLogger()))
 	publisher := NewPublisher(broker)
 
 	// 创建超大数量订阅者，确保每个发布都能被消费
@@ -298,8 +288,7 @@ func BenchmarkHighLoadParallel(b *testing.B) {
 // BenchmarkSubscribes measures the cost of subscribing one subscriber to
 // many topics in a single Subscribes call.
 func BenchmarkSubscribes(b *testing.B) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	broker, _ := NewBroker[int](WithLogger[int](logger))
+	broker, _ := NewBroker[int](WithLogger[int](benchLogger()))
 	sub := NewSubscriber[int](broker)
 
 	const topicCount = 50
@@ -336,13 +325,18 @@ func BenchmarkBrokerTopics(b *testing.B) {
 	}
 	for _, c := range cases {
 		b.Run(c.name, func(b *testing.B) {
-			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-			broker, _ := NewBroker[int](WithLogger[int](logger))
+			broker, _ := NewBroker[int](WithLogger[int](benchLogger()))
 			sub2 := NewSubscriber[int](broker)
+			subs := make([]*Subscription[int], 0, c.numTopics)
 			for j := 0; j < c.numTopics; j++ {
 				s, _ := sub2.Subscribe(fmt.Sprintf("u_%d", j))
-				defer func(s *Subscription[int]) { _ = s.Close() }(s)
+				subs = append(subs, s)
 			}
+			b.Cleanup(func() {
+				for _, s := range subs {
+					_ = s.Close()
+				}
+			})
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -363,8 +357,7 @@ type benchPacket struct {
 // BenchmarkStructPayload measures single-publisher / single-subscriber
 // throughput with a struct payload (vs. the int payloads used elsewhere).
 func BenchmarkStructPayload(b *testing.B) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	broker, _ := NewBroker[benchPacket](WithLogger[benchPacket](logger))
+	broker, _ := NewBroker[benchPacket](WithLogger[benchPacket](benchLogger()))
 	pub := NewPublisher[benchPacket](broker)
 	sub, _ := NewSubscriber[benchPacket](broker).Subscribe("struct_topic")
 	defer func(sub *Subscription[benchPacket]) { _ = sub.Close() }(sub)
@@ -388,8 +381,7 @@ func BenchmarkStructPayload(b *testing.B) {
 // topic that does not yet exist on the broker. This exercises the
 // createOrLoadSubscription fast path (read-lock lookup, no write).
 func BenchmarkPublishAutoCreateTopic(b *testing.B) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	broker, _ := NewBroker[int](WithCapacity[int](uint32(b.N)+16), WithLogger[int](logger))
+	broker, _ := NewBroker[int](WithCapacity[int](uint32(b.N)+16), WithLogger[int](benchLogger()))
 	pub := NewPublisher[int](broker)
 
 	b.ResetTimer()
