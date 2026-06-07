@@ -1,6 +1,7 @@
 package pubsub
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"runtime"
@@ -292,4 +293,111 @@ func BenchmarkHighLoadParallel(b *testing.B) {
 	b.StopTimer()
 	b.Logf("GOMAXPROCS=%d, Parallelism=%d, Subscribers=%d",
 		procs, procs*parallelFactor, len(subs))
+}
+
+// BenchmarkSubscribes measures the cost of subscribing one subscriber to
+// many topics in a single Subscribes call.
+func BenchmarkSubscribes(b *testing.B) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	broker, _ := NewBroker[int](WithLogger[int](logger))
+	sub := NewSubscriber[int](broker)
+
+	const topicCount = 50
+	topics := make([]string, topicCount)
+	for i := range topics {
+		topics[i] = fmt.Sprintf("topic_%d", i)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		subs, err := sub.Subscribes(topics)
+		if err != nil {
+			b.Fatal(err)
+		}
+		b.StopTimer()
+		for _, s := range subs {
+			_ = s.Close()
+		}
+		b.StartTimer()
+	}
+	b.ReportAllocs()
+}
+
+// BenchmarkBrokerTopics measures the cost of the Topics() introspection
+// helper as the number of live subscriptions grows.
+func BenchmarkBrokerTopics(b *testing.B) {
+	cases := []struct {
+		name      string
+		numTopics int
+	}{
+		{"10", 10},
+		{"100", 100},
+		{"1000", 1000},
+	}
+	for _, c := range cases {
+		b.Run(c.name, func(b *testing.B) {
+			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+			broker, _ := NewBroker[int](WithLogger[int](logger))
+			sub2 := NewSubscriber[int](broker)
+			for j := 0; j < c.numTopics; j++ {
+				s, _ := sub2.Subscribe(fmt.Sprintf("u_%d", j))
+				defer func(s *Subscription[int]) { _ = s.Close() }(s)
+			}
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = broker.Topics()
+			}
+			b.ReportAllocs()
+		})
+	}
+}
+
+// benchPacket is a small struct used to confirm the generic T parameter
+// is exercised with a non-primitive payload in benchmarks.
+type benchPacket struct {
+	seq  int
+	body string
+}
+
+// BenchmarkStructPayload measures single-publisher / single-subscriber
+// throughput with a struct payload (vs. the int payloads used elsewhere).
+func BenchmarkStructPayload(b *testing.B) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	broker, _ := NewBroker[benchPacket](WithLogger[benchPacket](logger))
+	pub := NewPublisher[benchPacket](broker)
+	sub, _ := NewSubscriber[benchPacket](broker).Subscribe("struct_topic")
+	defer func(sub *Subscription[benchPacket]) { _ = sub.Close() }(sub)
+
+	pkt := benchPacket{seq: 1, body: "payload"}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if err := pub.Publish("struct_topic", pkt); err != nil {
+			b.Fatal(err)
+		}
+		select {
+		case <-sub.Ch:
+		default:
+		}
+	}
+	b.ReportAllocs()
+}
+
+// BenchmarkPublishAutoCreateTopic measures the cost of publishing to a
+// topic that does not yet exist on the broker. This exercises the
+// createOrLoadSubscription fast path (read-lock lookup, no write).
+func BenchmarkPublishAutoCreateTopic(b *testing.B) {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	broker, _ := NewBroker[int](WithCapacity[int](uint32(b.N)+16), WithLogger[int](logger))
+	pub := NewPublisher[int](broker)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		topic := fmt.Sprintf("auto_%d", i)
+		if err := pub.Publish(topic, i); err != nil {
+			b.Fatal(err)
+		}
+	}
+	b.ReportAllocs()
 }

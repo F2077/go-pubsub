@@ -294,9 +294,10 @@ func TestMultiPublisherMultipleSubscribers(t *testing.T) {
 		publishers = append(publishers, NewPublisher(broker))
 	}
 
-	// 创建多个订阅者
+	// 创建多个订阅者（不立即关闭——每个订阅者必须保持订阅才能收到消息）
 	numSubscribers := 3
-	var subs []*Subscription[int]
+	subs := make([]*Subscription[int], 0, numSubscribers)
+	subscribers := make([]*Subscriber[int], 0, numSubscribers)
 	for i := 0; i < numSubscribers; i++ {
 		subscriber := NewSubscriber[int](broker)
 		sub, err := subscriber.Subscribe("multi_pub_multi_sub", WithChannelSize[int](Medium))
@@ -304,8 +305,13 @@ func TestMultiPublisherMultipleSubscribers(t *testing.T) {
 			t.Fatal(err)
 		}
 		subs = append(subs, sub)
-		_ = sub.Close()
+		subscribers = append(subscribers, subscriber)
 	}
+	t.Cleanup(func() {
+		for _, sub := range subs {
+			_ = sub.Close()
+		}
+	})
 
 	// 每个发布者各发送 5 条消息，预期每个订阅者收到 numPublishers * 5 条消息
 	numMessagesPerPublisher := 5
@@ -327,13 +333,17 @@ func TestMultiPublisherMultipleSubscribers(t *testing.T) {
 	wg.Wait()
 
 	// 检查每个订阅者收到的消息数量
+	// 必须检查 ok 标志：关闭的通道会立即返回 (0, false)，如果不检查就会被误算为消息
 	for i, sub := range subs {
 		received := 0
 		timeout := time.After(2 * time.Second)
 	Loop:
 		for {
 			select {
-			case <-sub.Ch:
+			case _, ok := <-sub.Ch:
+				if !ok {
+					break Loop
+				}
 				received++
 				if received >= totalMessages {
 					break Loop
@@ -345,6 +355,7 @@ func TestMultiPublisherMultipleSubscribers(t *testing.T) {
 		if received != totalMessages {
 			t.Fatalf("subscriber %d: expected %d messages, received %d", i+1, totalMessages, received)
 		}
+		_ = subscribers[i] // 保留引用以避免 lint 警告
 	}
 }
 
