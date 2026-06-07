@@ -43,9 +43,11 @@ comment too.
   write Chinese for the implementation narrative. Public API godoc and
   user-visible strings (error messages, `slog` messages) must be in
   English — see [`CLAUDE.md`](./CLAUDE.md) for the exact split.
-- Don't add new dependencies unless they pull their weight. Two
-  production deps (`github.com/google/uuid`, `github.com/stretchr/testify`)
-  is the budget.
+- Don't add new dependencies unless they pull their weight. Three
+  direct deps today: `github.com/google/uuid` (handle ids),
+  `github.com/stretchr/testify` (test ergonomics), and
+  `go.uber.org/goleak` (goroutine-leak guard on every test). Adding a
+  fourth requires updating this list in the same PR.
 
 ## Commit messages
 
