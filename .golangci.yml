@@ -2,10 +2,10 @@
 #
 # This file is intentionally short: go-pubsub is a small library and the
 # goal is to catch genuine bugs and API drift, not to bikeshed style.
-# The Go defaults in `govet`, `ineffassign`, and `unused` are already on
-# the conservative side; revive replaces the deprecated golint and adds
-# a couple of community-standard rules; staticcheck is the long-time
-# industry standard for Go static analysis.
+# `govet`, `ineffassign`, and `unused` are the conservative defaults;
+# revive replaces the deprecated golint and adds community-standard rules
+# (exported doc comments, error-strings, etc.); staticcheck is the
+# long-time industry standard for Go static analysis.
 #
 # To run locally: `make lint` (or `golangci-lint run ./...` directly).
 # To install: https://golangci-lint.run/welcome/install/
@@ -21,20 +21,24 @@ linters:
     - ineffassign    # unused assignments
     - unused         # unused identifiers (parameters, variables, types)
     - revive         # successor to golint; enforces exported doc comments
-    - staticcheck    # SA-prefix rules: S1019, S1000, etc.
+    - staticcheck    # SA-prefix rules: S1000, S1019, S1024, etc.
 
-  # Quick exclusions for code under stress (e.g. the bench file intentionally
-  # has long identifiers and a captured-loop-variable helper).
+  # The maintainer prefers explicit type parameters in generic option
+  # calls (e.g. NewBroker[string](), WithChannelSize[string](...)) even
+  # when the compiler could in principle infer T. The reasoning:
+  #
+  #   1. the API surface reads uniformly across editors and tools
+  #   2. type-arg-less chains like `NewBroker(WithLogger(logger))` are a
+  #      known inference footgun: staticcheck's S1000 "unnecessary type
+  #      arguments" rule has documented false positives there because
+  #      T is genuinely unconstrained in some call shapes
+  #   3. CLAUDE.md already records the explicit-type-args style as
+  #      out-of-scope for unrelated work
+  #
+  # This exclusion silences that one rule project-wide; everything else
+  # staticcheck reports is still enforced.
   exclusions:
     rules:
-      # The `infertypeargs` lint fires across this repo by design: the
-      # maintainer prefers explicit type parameters in exported option
-      # calls so generic instantiation reads uniformly. Pre-existing
-      # stylistic noise, not a correctness issue (see CLAUDE.md).
-      - path: _test\.go
-        linters:
-          - staticcheck
-        text: "S1019: should use make"
       - linters:
           - staticcheck
         text: "unnecessary type arguments"
