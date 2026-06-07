@@ -280,7 +280,7 @@ func TestPublishAutoCreatesSubscription(t *testing.T) {
 }
 
 // TestPublishCapacityExceeded verifies that creating a topic beyond the
-// broker's capacity returns a wrapped SubscriptionCapacityExceed.
+// broker's capacity returns a wrapped ErrSubscriptionCapacityExceeded.
 func TestPublishCapacityExceeded(t *testing.T) {
 	broker, _ := NewBroker[string](WithCapacity[string](1))
 	pub := NewPublisher[string](broker)
@@ -289,8 +289,8 @@ func TestPublishCapacityExceeded(t *testing.T) {
 		t.Fatalf("first publish: %v", err)
 	}
 	err := pub.Publish("second", "should fail")
-	if !errors.Is(err, SubscriptionCapacityExceed) {
-		t.Fatalf("expected SubscriptionCapacityExceed, got %v", err)
+	if !errors.Is(err, ErrSubscriptionCapacityExceeded) {
+		t.Fatalf("expected ErrSubscriptionCapacityExceeded, got %v", err)
 	}
 }
 
@@ -348,8 +348,8 @@ func TestSubscribesPartialFailure(t *testing.T) {
 	// "first" succeeds, "second" should fail because the broker can only
 	// hold one topic and "first" already used it.
 	_, err := sub.Subscribes([]string{"first", "second"})
-	if !errors.Is(err, SubscriptionCapacityExceed) {
-		t.Fatalf("expected SubscriptionCapacityExceed, got %v", err)
+	if !errors.Is(err, ErrSubscriptionCapacityExceeded) {
+		t.Fatalf("expected ErrSubscriptionCapacityExceeded, got %v", err)
 	}
 
 	// "first" was successfully created and remains on the subscriber.
@@ -373,9 +373,9 @@ func TestSubscribesPartialFailure(t *testing.T) {
 // against lost messages, double-counts, or races in the deliver path.
 func TestConcurrentPublishAllDelivered(t *testing.T) {
 	const (
-		numPublishers     = 16
-		msgsPerPublisher  = 200
-		expectedTotal     = numPublishers * msgsPerPublisher
+		numPublishers    = 16
+		msgsPerPublisher = 200
+		expectedTotal    = numPublishers * msgsPerPublisher
 	)
 
 	broker, _ := NewBroker[int]()

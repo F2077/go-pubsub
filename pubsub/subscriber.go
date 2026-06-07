@@ -3,33 +3,52 @@ package pubsub
 import (
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
-var (
-	ErrSubscriberClosed    = errors.New("subscriber is closed")
-	ErrSubscriptionTimeout = errors.New("subscription timeout")
-)
+// ErrSubscriberClosed is returned by Subscribe, Subscribes, and Close on a
+// Subscriber that has already been Closed.
+var ErrSubscriberClosed = errors.New("subscriber is closed")
 
+// ErrSubscriptionTimeout is delivered to Subscription.ErrCh when a Subscribe
+// call with WithTimeout receives no Publish within the configured idle
+// period. A successful Publish resets the sliding timer.
+var ErrSubscriptionTimeout = errors.New("subscription timeout")
+
+// ChannelSize is the per-topic buffer depth for a subscription. The
+// pre-defined Block / Single / Small / Medium / Large / Huge constants
+// cover the common cases; any non-negative uint16 is accepted.
 type ChannelSize uint16
 
+// Pre-defined ChannelSize values. The Medium default applies when
+// Subscribe is called without WithChannelSize.
 var (
-	Block  ChannelSize = 0
-	Single ChannelSize = 1
+	Block  ChannelSize = 0 // Block makes the per-topic channel unbuffered: Publishes block until the subscriber receives.
+	Single ChannelSize = 1 // Single makes the per-topic channel buffered with capacity 1.
 	Small              = Single * 10
-	Medium             = Small * 10
+	Medium             = Small * 10 // Medium is the default channel size (100).
 	Large              = Medium * 10
 	Huge               = Large * 10
 )
 
+// Defaults applied when Subscribe is called without the corresponding
+// SubscriptionOption. Use Medium by default; timeouts are disabled unless
+// the caller passes WithTimeout with a positive duration.
 var (
 	DefaultChannelSize = Medium
 	DefaultTimeout     = 0 * time.Second
 )
 
+// Subscriber receives messages on topics it has subscribed to. Each
+// Subscriber has its own UUID and is bound to exactly one Broker.
+//
+// The zero value is not usable; construct with NewSubscriber.
+//
+// Subscriber is safe for concurrent use by multiple goroutines.
 type Subscriber[T any] struct {
 	mutex sync.Mutex
 
@@ -44,6 +63,8 @@ type Subscriber[T any] struct {
 	timeouts map[string]time.Duration
 }
 
+// NewSubscriber creates a Subscriber bound to the given broker, with its
+// own UUID and an empty topic set. Use Subscribe to attach to topics.
 func NewSubscriber[T any](broker *Broker[T]) *Subscriber[T] {
 	return &Subscriber[T]{
 		id:       uuid.New().String(),
@@ -54,14 +75,25 @@ func NewSubscriber[T any](broker *Broker[T]) *Subscriber[T] {
 	}
 }
 
+// String returns the subscriber's debug form: SUBSCRIBER#<id>@<broker>.
+// Implements fmt.Stringer.
 func (s *Subscriber[T]) String() string {
 	return fmt.Sprintf("SUBSCRIBER#%s@%s", s.id, s.broker)
 }
 
+// Id returns the subscriber's UUID.
 func (s *Subscriber[T]) Id() string {
 	return s.id
 }
 
+// Subscribe attaches to topic and returns a *Subscription whose Ch yields
+// every message published to that topic. Delivery is non-blocking: a
+// message is dropped for a subscriber whose per-topic channel is full.
+//
+// Returns ErrSubscriberClosed if the subscriber is already closed, or a
+// wrapped ErrSubscriptionCapacityExceeded if subscribing would push the
+// broker over its capacity. Note that even on capacity error, any topics
+// that were successfully subscribed earlier in the call remain attached.
 func (s *Subscriber[T]) Subscribe(topic string, opts ...SubscriptionOption[T]) (*Subscription[T], error) {
 	options := &subscriptionOptions[T]{
 		size:    DefaultChannelSize,
@@ -72,10 +104,10 @@ func (s *Subscriber[T]) Subscribe(topic string, opts ...SubscriptionOption[T]) (
 	}
 
 	s.mutex.Lock()
-	s.broker.logger.Debug("Subscriber.Subscribe 获得了🔒", slog.Any("Subscriber", s))
+	s.broker.logger.Debug("Subscriber.Subscribe acquired lock", slog.Any("subscriber", s))
 	defer func() {
 		s.mutex.Unlock()
-		s.broker.logger.Debug("Subscriber.Subscribe 释放了🔒", slog.Any("Subscriber", s))
+		s.broker.logger.Debug("Subscriber.Subscribe released lock", slog.Any("subscriber", s))
 	}()
 
 	if s.closed {
@@ -108,7 +140,10 @@ func (s *Subscriber[T]) Subscribe(topic string, opts ...SubscriptionOption[T]) (
 
 		// 创建新定时器
 		s.timeouts[topic] = options.timeout
-		s.broker.logger.Debug("订阅超时时间", slog.Any("topic", topic), slog.Any("timeout", options.timeout))
+		s.broker.logger.Debug("subscription timeout configured",
+			slog.Any("topic", topic),
+			slog.Any("timeout", options.timeout),
+		)
 		timer := time.AfterFunc(options.timeout, func() {
 			s.handleTimeout(topic, errCh.(chan error))
 		})
@@ -123,12 +158,16 @@ func (s *Subscriber[T]) Subscribe(topic string, opts ...SubscriptionOption[T]) (
 	}, nil
 }
 
+// Subscribes attaches to every topic in topics in one call and returns a
+// *Subscription per topic, in the same order. If any Subscribe call
+// fails, the error is returned and any subscriptions that succeeded
+// earlier in the iteration remain attached (partial-failure semantics).
 func (s *Subscriber[T]) Subscribes(topics []string, opts ...SubscriptionOption[T]) ([]*Subscription[T], error) {
 	if s.closed {
 		return nil, ErrSubscriberClosed
 	}
 
-	subs := make([]*Subscription[T], len(topics), len(topics))
+	subs := make([]*Subscription[T], len(topics))
 	for i, topic := range topics {
 		sub, err := s.Subscribe(topic, opts...)
 		if err != nil {
@@ -139,6 +178,9 @@ func (s *Subscriber[T]) Subscribes(topics []string, opts ...SubscriptionOption[T
 	return subs, nil
 }
 
+// Close unsubscribes from every topic the subscriber is on and marks it
+// closed. Further Subscribe / Subscribes calls return ErrSubscriberClosed.
+// Calling Close twice returns ErrSubscriberClosed on the second call.
 func (s *Subscriber[T]) Close() error {
 	if s.closed {
 		return ErrSubscriberClosed
@@ -157,10 +199,10 @@ func (s *Subscriber[T]) Close() error {
 
 func (s *Subscriber[T]) unsubscribe(topic string) error {
 	s.mutex.Lock()
-	s.broker.logger.Debug("Subscriber.unsubscribe 获得了🔒", slog.Any("Subscriber", s))
+	s.broker.logger.Debug("Subscriber.unsubscribe acquired lock", slog.Any("subscriber", s))
 	defer func() {
 		s.mutex.Unlock()
-		s.broker.logger.Debug("Subscriber.unsubscribe 释放了🔒", slog.Any("Subscriber", s))
+		s.broker.logger.Debug("Subscriber.unsubscribe released lock", slog.Any("subscriber", s))
 	}()
 
 	if s.closed {
@@ -222,7 +264,7 @@ func (s *Subscriber[T]) handleTimeout(topic string, errCh chan<- error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	s.broker.logger.Debug("订阅超时处理", slog.Any("topic", topic))
+	s.broker.logger.Debug("subscription timeout fired", slog.Any("topic", topic))
 	// 检查是否仍订阅该主题
 	if _, ok := s.topics[topic]; !ok {
 		return
@@ -232,14 +274,27 @@ func (s *Subscriber[T]) handleTimeout(topic string, errCh chan<- error) {
 	errCh <- ErrSubscriptionTimeout
 }
 
+// Subscription is the read-only handle returned by Subscribe. Ch receives
+// messages published to the topic; ErrCh receives ErrSubscriptionTimeout
+// when a Subscribe with WithTimeout receives no message within the
+// configured idle period. Close releases the topic.
+//
+// Subscription is single-topic; create one Subscription per (subscriber,
+// topic) pair.
 type Subscription[T any] struct {
 	topic      string
 	subscriber *Subscriber[T]
 	Ch         <-chan T
 	ErrCh      <-chan error
-	OnClose    func(topic string)
+	// OnClose, if non-nil, is invoked synchronously by Close before the
+	// underlying unsubscribe runs. The hook receives the topic name.
+	OnClose func(topic string)
 }
 
+// Close releases the subscription: removes the subscriber from the topic,
+// closes the per-topic Ch and ErrCh, stops the timer, and runs OnClose if
+// set. The broker may then garbage-collect the subscription if no
+// subscribers remain.
 func (sub *Subscription[T]) Close() error {
 	if sub.OnClose != nil {
 		sub.OnClose(sub.topic)
@@ -247,6 +302,8 @@ func (sub *Subscription[T]) Close() error {
 	return sub.subscriber.unsubscribe(sub.topic)
 }
 
+// SubscriptionOption configures a Subscribe call. SubscriptionOptions
+// never fail; they just mutate a per-call options struct.
 type SubscriptionOption[T any] func(*subscriptionOptions[T])
 
 type subscriptionOptions[T any] struct {
@@ -254,14 +311,17 @@ type subscriptionOptions[T any] struct {
 	timeout time.Duration
 }
 
-// WithChannelSize 设置通道大小
+// WithChannelSize sets the per-topic channel size for this subscription.
+// See the Block / Single / Small / Medium / Large / Huge constants.
 func WithChannelSize[T any](size ChannelSize) SubscriptionOption[T] {
 	return func(opts *subscriptionOptions[T]) {
 		opts.size = size
 	}
 }
 
-// WithTimeout 设置超时时间（大于 0 表示启用超时）
+// WithTimeout sets a sliding idle-timeout. A successful Publish resets
+// the timer; if it elapses, ErrSubscriptionTimeout is delivered to ErrCh
+// exactly once. A zero or negative duration disables the timer.
 func WithTimeout[T any](timeout time.Duration) SubscriptionOption[T] {
 	return func(opts *subscriptionOptions[T]) {
 		opts.timeout = timeout

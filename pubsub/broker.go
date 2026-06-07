@@ -3,20 +3,36 @@ package pubsub
 import (
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"log/slog"
 	"os"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
-const (
-	DefaultCapacity = uint32(8192)
-)
+// DefaultCapacity is the default maximum number of topics a Broker will hold
+// before Publish / Subscribe returns ErrSubscriptionCapacityExceeded.
+const DefaultCapacity = uint32(8192)
 
-var (
-	SubscriptionCapacityExceed = errors.New("subscription capacity exceed")
-)
+// ErrSubscriptionCapacityExceeded is returned by Publish and Subscribe when
+// the broker already holds DefaultCapacity (or the value passed to
+// WithCapacity) topics. The error wraps the cap that was exceeded, so
+// callers can recover the limit via errors.Is and a custom Unwrap if needed.
+var ErrSubscriptionCapacityExceeded = errors.New("subscription capacity exceed")
 
+// ErrLoggerNil is returned by WithLogger when a nil *slog.Logger is passed.
+var ErrLoggerNil = errors.New("logger cannot be nil")
+
+// ErrBrokerIdEmpty is returned by WithId when an empty string is passed.
+var ErrBrokerIdEmpty = errors.New("id cannot be empty")
+
+// Broker owns the topic→subscription map and the global topic capacity cap.
+// A single Broker is the only place a topic is registered, and all
+// Publishers and Subscribers must share one.
+//
+// The zero value is not usable; construct with NewBroker.
+//
+// Broker is safe for concurrent use by multiple goroutines.
 type Broker[T any] struct {
 	logger  *slog.Logger
 	rwMutex sync.RWMutex
@@ -26,6 +42,9 @@ type Broker[T any] struct {
 	capacity      uint32
 }
 
+// NewBroker creates a Broker with a random UUID id and DefaultCapacity,
+// logging to os.Stdout at the default level. Use BrokerOptions to override
+// the id, capacity, or logger.
 func NewBroker[T any](options ...BrokerOption[T]) (*Broker[T], error) {
 	b := &Broker[T]{
 		logger:        slog.New(slog.NewTextHandler(os.Stdout, nil)),
@@ -45,28 +64,39 @@ func NewBroker[T any](options ...BrokerOption[T]) (*Broker[T], error) {
 	return b, nil
 }
 
+// BrokerOption configures a Broker. BrokerOptions return an error so they
+// can validate input (see WithLogger and WithId).
 type BrokerOption[T any] func(*Broker[T]) error
 
+// WithLogger sets the *slog.Logger the broker uses for internal lock-trace
+// and lifecycle messages. Passing nil returns ErrLoggerNil and the broker
+// is left unchanged.
 func WithLogger[T any](logger *slog.Logger) BrokerOption[T] {
 	return func(b *Broker[T]) error {
 		if logger == nil {
-			return errors.New("logger cannot be nil")
+			return ErrLoggerNil
 		}
 		b.logger = logger
 		return nil
 	}
 }
 
+// WithId overrides the random UUID assigned by NewBroker. Useful when the
+// broker id is propagated through a wider system (tracing, log filtering).
+// Passing an empty string returns ErrBrokerIdEmpty.
 func WithId[T any](id string) BrokerOption[T] {
 	return func(b *Broker[T]) error {
 		if id == "" {
-			return errors.New("id cannot be empty")
+			return ErrBrokerIdEmpty
 		}
 		b.id = id
 		return nil
 	}
 }
 
+// WithCapacity sets the maximum number of topics the broker will hold.
+// New topics above this cap cause Publish / Subscribe to return a wrapped
+// ErrSubscriptionCapacityExceeded. The default is DefaultCapacity.
 func WithCapacity[T any](capacity uint32) BrokerOption[T] {
 	return func(b *Broker[T]) error {
 		b.capacity = capacity
@@ -74,49 +104,61 @@ func WithCapacity[T any](capacity uint32) BrokerOption[T] {
 	}
 }
 
+// Id returns the broker's identifier (a random UUID by default, or
+// whatever was passed to WithId).
 func (b *Broker[T]) Id() string {
 	return b.id
 }
 
+// Capacity returns the maximum number of topics this broker will hold.
 func (b *Broker[T]) Capacity() uint32 {
 	return b.capacity
 }
 
+// Topics returns a snapshot slice of the topic names currently held by
+// the broker. The returned slice is a copy; callers may mutate it freely.
+//
+// Note that topic reaping is asynchronous: when the last subscriber for a
+// topic unsubscribes, the topic is removed in a separate goroutine to
+// avoid a subscription→broker lock-order deadlock. A freshly-emptied topic
+// may still appear in the returned slice for a short window.
 func (b *Broker[T]) Topics() []string {
 	b.rwMutex.RLock()
-	b.logger.Debug("Broker.Topics 获得了📖🔒", slog.Any("Broker", b))
+	b.logger.Debug("Broker.Topics acquired read lock", slog.Any("broker", b))
 	defer func() {
 		b.rwMutex.RUnlock()
-		b.logger.Debug("Broker.Topics 释放了📖🔒", slog.Any("Broker", b))
+		b.logger.Debug("Broker.Topics released read lock", slog.Any("broker", b))
 	}()
 
-	results := make([]string, 0)
+	results := make([]string, 0, len(b.subscriptions))
 	for k := range b.subscriptions {
 		results = append(results, k)
 	}
 	return results
 }
 
+// String returns a stable human-readable form of the broker, in the format
+// BROKER#<id>(cap: <n>). Implements fmt.Stringer.
 func (b *Broker[T]) String() string {
 	return fmt.Sprintf("BROKER#%s(cap: %d)", b.id, b.capacity)
 }
 
 func (b *Broker[T]) createOrLoadSubscription(topic string) (*subscription[T], error) {
 	b.rwMutex.RLock()
-	b.logger.Debug("Broker.createOrLoadSubscription 获得了📖🔒", slog.Any("Broker", b))
+	b.logger.Debug("Broker.createOrLoadSubscription acquired read lock", slog.Any("broker", b))
 	if sub, ok := b.subscriptions[topic]; ok {
 		b.rwMutex.RUnlock()
-		b.logger.Debug("Broker.createOrLoadSubscription 释放了📖🔒", slog.Any("Broker", b))
+		b.logger.Debug("Broker.createOrLoadSubscription released read lock", slog.Any("broker", b))
 		return sub, nil
 	}
 	b.rwMutex.RUnlock()
-	b.logger.Debug("Broker.createOrLoadSubscription 释放了📖🔒", slog.Any("Broker", b))
+	b.logger.Debug("Broker.createOrLoadSubscription released read lock", slog.Any("broker", b))
 
 	b.rwMutex.Lock()
-	b.logger.Debug("Broker.createOrLoadSubscription 获得了✍️🔒", slog.Any("Broker", b))
+	b.logger.Debug("Broker.createOrLoadSubscription acquired write lock", slog.Any("broker", b))
 	defer func() {
 		b.rwMutex.Unlock()
-		b.logger.Debug("Broker.createOrLoadSubscription 释放了✍️🔒", slog.Any("Broker", b))
+		b.logger.Debug("Broker.createOrLoadSubscription released write lock", slog.Any("broker", b))
 	}()
 
 	// 再次检查防止竞态(也就是可能在上边的加读锁的检查topic对应订阅的时候其他协程创建了订阅)
@@ -126,7 +168,7 @@ func (b *Broker[T]) createOrLoadSubscription(topic string) (*subscription[T], er
 
 	// 仅在创建新主题时检查容量
 	if len(b.subscriptions) >= int(b.capacity) {
-		return nil, fmt.Errorf("%w subscription capacity exceeds %d", SubscriptionCapacityExceed, b.capacity)
+		return nil, fmt.Errorf("%w subscription capacity exceeds %d", ErrSubscriptionCapacityExceeded, b.capacity)
 	}
 
 	sub := newSubscription[T](b.logger, topic, b)
@@ -136,10 +178,10 @@ func (b *Broker[T]) createOrLoadSubscription(topic string) (*subscription[T], er
 
 func (b *Broker[T]) tryRemoveSubscription(topic string) {
 	b.rwMutex.Lock()
-	b.logger.Debug("Broker.tryRemoveSubscription 获得了✍️🔒", slog.Any("Broker", b))
+	b.logger.Debug("Broker.tryRemoveSubscription acquired write lock", slog.Any("broker", b))
 	defer func() {
 		b.rwMutex.Unlock()
-		b.logger.Debug("Broker.tryRemoveSubscription 释放了✍️🔒", slog.Any("Broker", b))
+		b.logger.Debug("Broker.tryRemoveSubscription released write lock", slog.Any("broker", b))
 	}()
 
 	// 当订阅中没有任何订阅者的时候就可以删除订阅了
@@ -168,20 +210,20 @@ func newSubscription[T any](logger *slog.Logger, topic string, broker *Broker[T]
 
 func (s *subscription[T]) isEmpty() bool {
 	s.rwMutex.RLock()
-	s.logger.Debug("subscription.isEmpty 获得了📖🔒")
+	s.logger.Debug("subscription.isEmpty acquired read lock")
 	defer func() {
 		s.rwMutex.RUnlock()
-		s.logger.Debug("subscription.isEmpty 释放了📖🔒")
+		s.logger.Debug("subscription.isEmpty released read lock")
 	}()
 	return len(s.subscribers) == 0
 }
 
 func (s *subscription[T]) addSubscriber(subscriber *Subscriber[T]) {
 	s.rwMutex.Lock()
-	s.logger.Debug("subscription.addSubscriber 获得了✍️🔒")
+	s.logger.Debug("subscription.addSubscriber acquired write lock")
 	defer func() {
 		s.rwMutex.Unlock()
-		s.logger.Debug("subscription.addSubscriber 释放了✍️🔒")
+		s.logger.Debug("subscription.addSubscriber released write lock")
 	}()
 
 	s.subscribers[subscriber.id] = subscriber
@@ -189,10 +231,10 @@ func (s *subscription[T]) addSubscriber(subscriber *Subscriber[T]) {
 
 func (s *subscription[T]) removeSubscriber(subscriber *Subscriber[T]) {
 	s.rwMutex.Lock()
-	s.logger.Debug("subscription.removeSubscriber 获得了✍️🔒")
+	s.logger.Debug("subscription.removeSubscriber acquired write lock")
 	defer func() {
 		s.rwMutex.Unlock()
-		s.logger.Debug("subscription.removeSubscriber 释放了✍️🔒")
+		s.logger.Debug("subscription.removeSubscriber released write lock")
 	}()
 
 	delete(s.subscribers, subscriber.id)
@@ -209,10 +251,10 @@ func (s *subscription[T]) removeSubscriber(subscriber *Subscriber[T]) {
 
 func (s *subscription[T]) deliver(message T) {
 	s.rwMutex.RLock()
-	s.logger.Debug("subscription.deliver 获得了📖🔒")
+	s.logger.Debug("subscription.deliver acquired read lock")
 	defer func() {
 		s.rwMutex.RUnlock()
-		s.logger.Debug("subscription.deliver 释放了📖🔒")
+		s.logger.Debug("subscription.deliver released read lock")
 	}()
 
 	for _, subscriber := range s.subscribers {

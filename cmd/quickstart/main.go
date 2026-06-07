@@ -8,7 +8,10 @@ import (
 
 func main() {
 	// 1. Create a broker (supports generics)
-	broker, _ := pubsub.NewBroker[string]()
+	broker, err := pubsub.NewBroker[string]()
+	if err != nil {
+		panic(err)
+	}
 
 	// 2. Create a publisher
 	publisher := pubsub.NewPublisher[string](broker)
@@ -17,10 +20,13 @@ func main() {
 	subscriber := pubsub.NewSubscriber[string](broker)
 
 	// 4. Subscribe to a topic with buffer size and timeout
-	sub, _ := subscriber.Subscribe("alerts",
+	sub, err := subscriber.Subscribe("alerts",
 		pubsub.WithChannelSize[string](pubsub.Medium), // Buffer 100 messages
 		pubsub.WithTimeout[string](5*time.Second),     // Auto-close if idle
 	)
+	if err != nil {
+		panic(err)
+	}
 	defer func(sub *pubsub.Subscription[string]) {
 		_ = sub.Close()
 	}(sub)

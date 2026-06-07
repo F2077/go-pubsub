@@ -390,5 +390,5 @@ func TestSubscriber_Subscribes(t *testing.T) {
 	}(subscriber2)
 
 	_, err = subscriber2.Subscribes([]string{"topicA", "topicB"})
-	assert.ErrorIs(t, err, SubscriptionCapacityExceed)
+	assert.ErrorIs(t, err, ErrSubscriptionCapacityExceeded)
 }
