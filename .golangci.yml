@@ -1,0 +1,40 @@
+# golangci-lint configuration for go-pubsub.
+#
+# This file is intentionally short: go-pubsub is a small library and the
+# goal is to catch genuine bugs and API drift, not to bikeshed style.
+# The Go defaults in `govet`, `ineffassign`, and `unused` are already on
+# the conservative side; revive replaces the deprecated golint and adds
+# a couple of community-standard rules; staticcheck is the long-time
+# industry standard for Go static analysis.
+#
+# To run locally: `make lint` (or `golangci-lint run ./...` directly).
+# To install: https://golangci-lint.run/welcome/install/
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - govet          # go vet, including shadow + copylocks
+    - ineffassign    # unused assignments
+    - unused         # unused identifiers (parameters, variables, types)
+    - revive         # successor to golint; enforces exported doc comments
+    - staticcheck    # SA-prefix rules: S1019, S1000, etc.
+
+  # Quick exclusions for code under stress (e.g. the bench file intentionally
+  # has long identifiers and a captured-loop-variable helper).
+  exclusions:
+    rules:
+      # The `infertypeargs` lint fires across this repo by design: the
+      # maintainer prefers explicit type parameters in exported option
+      # calls so generic instantiation reads uniformly. Pre-existing
+      # stylistic noise, not a correctness issue (see CLAUDE.md).
+      - path: _test\.go
+        linters:
+          - staticcheck
+        text: "S1019: should use make"
+      - linters:
+          - staticcheck
+        text: "unnecessary type arguments"
