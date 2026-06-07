@@ -1,0 +1,50 @@
+# Codecov configuration for go-pubsub.
+#
+# The CI workflow in .github/workflows/test.yml runs `go test -race
+# -coverprofile=coverage.out -covermode=atomic ./...` and uploads
+# coverage.out to Codecov. This file tells Codecov how to interpret the
+# numbers and what status checks to enforce.
+#
+# Until the project is enabled on codecov.io for the first time, the
+# upload step in CI silently no-ops (fail_ci_if_error: false below), so
+# enabling Codecov is opt-in and never breaks the build.
+
+codecov:
+  require_ci_to_pass: true
+  notify:
+    wait_for_ci: true
+
+coverage:
+  precision: 2
+  round: down
+  range: "70...95"
+  status:
+    project:
+      default:
+        # go-pubsub sits at ~95.7% statement coverage; a 90% floor leaves
+        # room for error-path branches that are intentionally hard to
+        # exercise (capacity overflows, double-close, etc.) without
+        # allowing regressions in the happy path.
+        target: 90%
+        threshold: 1%
+        if_ci_failed: error
+    patch:
+      default:
+        # Each PR should not drop coverage on the changed lines.
+        target: 80%
+        threshold: 5%
+
+# Only track the pubsub library package; the cmd/quickstart binary is a
+# runnable example with no production surface.
+flag_management:
+  default_rules:
+    carryforward: true
+    statuses:
+      - type: project
+        target: 90%
+      - type: patch
+        target: 80%
+  individual_flags:
+    - name: unittests
+      paths:
+        - pubsub/

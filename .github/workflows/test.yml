@@ -48,6 +48,19 @@ jobs:
           version: v1.61
           only-new-issues: true
 
+      # Coverage upload is opt-in: until the project is enabled on
+      # codecov.io, this step silently no-ops (fail_ci_if_error: false).
+      # Remove that flag once Codecov is wired up to fail on regressions.
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.out
+          flags: unittests
+          fail_ci_if_error: false
+          verbose: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
       - name: Upload coverage artifact
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
