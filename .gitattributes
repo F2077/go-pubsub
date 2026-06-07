@@ -12,3 +12,7 @@
 *.gif binary
 *.ico binary
 *.pdf binary
+
+# Mark profiling artifacts as generated (not project code).
+.profile/** linguist-generated
+

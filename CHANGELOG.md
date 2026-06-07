@@ -41,6 +41,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `"subscription capacity exceeded"` (was the leftover
   `"subscription capacity exceed"` from the rename).
 
+### Added (profiling toolchain)
+- **Profiling & bench toolchain** (local-only). Seven new `make`
+  targets (`profile-install` / `profile-cpu` / `profile-mem` /
+  `profile-mutex` / `profile-trace` / `flamegraph` / `benchstat`)
+  plus `PROFILING.md` runbook. All artifacts land in `.profile/`
+  (gitignored). The only new dep is
+  `golang.org/x/perf/cmd/benchstat`, wired via Go 1.25's `tool`
+  directive in `go.mod`. No production-code changes.
+- **Go 1.21 → 1.25** bump in `go.mod` /
+  `.github/workflows/test.yml` / `CLAUDE.md`. Required for the
+  `tool` directive; no public API impact.
+
 ### Changed (test-side cleanup)
 - Test files now share a single `testLogger()` / `benchLogger()` pair
   in `pubsub/helpers_test.go`; ~19 inline `slog.New(...)` duplicates

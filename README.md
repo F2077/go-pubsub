@@ -124,6 +124,7 @@ make help      # list every target
 make all       # fmt + vet + test
 make cover     # write cover.out + cover.html
 make bench     # run the README-cited benchmarks
+make profile-cpu # open the CPU flame graph (see PROFILING.md)
 ```
 
 ---

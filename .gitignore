@@ -51,3 +51,6 @@ desktop.ini
 # ---- Local session scratch (Claude Code) ----
 .claude/settings.local.json
 .remember/
+
+# --- Profiling artifacts (see PROFILING.md) ---
+.profile/
