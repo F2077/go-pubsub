@@ -70,6 +70,37 @@ $(PROFILE_DIR):
 profile-install: ## Install benchstat from go.mod tool directive
 	$(GO) install tool
 
+profile-cpu: $(PROFILE_DIR) ## Run bench with CPU profile → .profile/cpu.prof
+	$(GO) test -bench=$(PROFILE_BENCH) -benchtime=2s \
+		-cpuprofile=$(PROFILE_DIR)/cpu.prof -run=^$$ ./pubsub/...
+
+profile-mem: $(PROFILE_DIR) ## Allocation profile → .profile/mem.prof
+	$(GO) test -bench=$(PROFILE_BENCH) -benchtime=2s -benchmem \
+		-memprofile=$(PROFILE_DIR)/mem.prof -memprofilerate=1 -run=^$$ ./pubsub/...
+
+profile-mutex: $(PROFILE_DIR) ## Lock contention → .profile/mutex.prof
+	$(GO) test -bench=$(PROFILE_BENCH) -benchtime=2s \
+		-mutexprofile=$(PROFILE_DIR)/mutex.prof \
+		-mutexprofilefraction=1 -run=^$$ ./pubsub/...
+
+profile-trace: $(PROFILE_DIR) ## Execution trace → .profile/trace.out
+	$(GO) test -bench=$(PROFILE_BENCH) -benchtime=2s \
+		-trace=$(PROFILE_DIR)/trace.out -run=^$$ ./pubsub/...
+
+flamegraph: ## Open CPU flame graph in browser (pprof -http=:8080)
+	$(GO) tool pprof -http=:8080 $(PROFILE_DIR)/cpu.prof
+
+benchstat: $(PROFILE_DIR) ## Diff bench against .profile/bench.base.txt
+	$(GO) test -bench=. -count=10 -run=^$$ ./pubsub/... \
+		> $(PROFILE_DIR)/bench.new.txt
+	@if [ -f $(PROFILE_DIR)/bench.base.txt ]; then \
+		$(GO) run tool benchstat \
+			$(PROFILE_DIR)/bench.base.txt $(PROFILE_DIR)/bench.new.txt; \
+	else \
+		echo "no baseline at $(PROFILE_DIR)/bench.base.txt — saving current as baseline"; \
+		mv $(PROFILE_DIR)/bench.new.txt $(PROFILE_DIR)/bench.base.txt; \
+	fi
+
 fmt: ## Fail if any tracked Go file is not gofmt-clean
 	@test -z $$($(GO)fmt -l $$(git ls-files '*.go')) \
 		|| ($(GO)fmt -d $$(git ls-files '*.go'); exit 1)
