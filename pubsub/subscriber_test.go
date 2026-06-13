@@ -466,13 +466,15 @@ func TestResetTimerRespectsGo123ResetSemantics(t *testing.T) {
 
 	errCh := make(chan error, 10)
 	done := make(chan struct{})
+	exit := make(chan struct{})
 	s.timerDones["x"] = done
+	s.timerExits["x"] = exit
 
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		s.runTopicTimer("x", t0, errCh, done)
+		s.runTopicTimer("x", t0, errCh, done, exit)
 	}()
 
 	s.resetTimer("x")
@@ -535,5 +537,67 @@ func TestHandleTimeoutDoesNotDeadlockWhenConsumerIsNotDraining(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("subscriber.Close deadlocked — handleTimeout held s.mutex on full errCh")
+	}
+}
+
+// TestReSubscribeErrChIsolatedPerSubscription 验证 finding #3 的修复：
+// 之前 s.errChannels 用 topic 作 key，导致 re-Subscribe 同 topic 且关闭
+// 其中一条 sub 时，shared errCh 被另一条 sub 误关。现在 errCh 挂在
+// *Subscription 上，互不共享。
+//
+// 场景：sub1 = Subscribe("t", WithTimeout) → 拿 errCh1。sub2 =
+// Subscribe("t")（不传 timeout，懒合约）→ 拿 nil。sub2.Close() 走
+// unsubscribe，删除 s.subs[sub2]、delete s.topics["t"] 等。sub1 仍持有
+// errCh1 引用，sub1.ErrCh 不应被关。
+func TestReSubscribeErrChIsolatedPerSubscription(t *testing.T) {
+	broker, _ := NewBroker[string]()
+	sub := NewSubscriber[string](broker)
+	pub := NewPublisher[string](broker)
+
+	// sub1: WithTimeout → ErrCh 应该是 non-nil 的活 channel
+	sub1, err := sub.Subscribe("t", WithTimeout[string](1*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sub1.ErrCh == nil {
+		t.Fatal("sub1.ErrCh should be non-nil with WithTimeout")
+	}
+
+	// sub2: 同 topic，不传 WithTimeout → ErrCh 应该是 nil
+	sub2, err := sub.Subscribe("t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sub2.ErrCh != nil {
+		t.Fatal("sub2.ErrCh should be nil without WithTimeout")
+	}
+
+	// 关掉 sub2
+	if err := sub2.Close(); err != nil {
+		t.Fatalf("sub2.Close: %v", err)
+	}
+
+	// 关键断言：sub1.ErrCh 仍然开放（被关闭的 channel receive 会立刻
+	// 返回零值）。用一个短 timeout 包裹 select，模拟"用户没等到消息也
+	// 没收到 close 信号"——pre-fix 这里会立刻返回零值。
+	select {
+	case _, ok := <-sub1.ErrCh:
+		if !ok {
+			t.Fatal("sub1.ErrCh was closed by sub2.Close() — errCh contract leaked")
+		}
+		t.Fatal("sub1.ErrCh delivered a value")
+	case <-time.After(50 * time.Millisecond):
+		// expected: channel 开放，receive 阻塞
+	}
+
+	// 验证：发一条消息后 sub1.ErrCh 不该被这次 publish 误关。发个消息
+	// 让 timer 仍然 hold（1h timeout），确保 sub1 还在正常生命周期里。
+	_ = pub.Publish("t", "hello")
+	select {
+	case _, ok := <-sub1.ErrCh:
+		if !ok {
+			t.Fatal("sub1.ErrCh closed after publish — unexpected")
+		}
+	case <-time.After(50 * time.Millisecond):
 	}
 }
