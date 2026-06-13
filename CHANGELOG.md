@@ -22,15 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `Makefile` (distilled from spf13/cobra + uber-go/zap conventions).
 - `.github/workflows/test.yml` running `go test -race -coverprofile` on
   every push and PR.
-- `.editorconfig`, `.golangci.yml`, `.gitattributes`, `codecov.yml`.
+- `.editorconfig`, `.golangci.yml`, `.gitattributes`.
 - Governance files: `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`,
   `SECURITY.md`.
 - `cmd/quickstart/README.md` documenting the runnable example.
 - **Goroutine-leak guard** via `go.uber.org/goleak v1.3.0`; every test
   in the `pubsub` package now fails if a goroutine outlives its test.
-- **Codecov integration**: CI uploads `coverage.out` to Codecov with
-  a 90% project / 80% patch target (opt-in until the repo is enabled
-  on codecov.io — the upload step is non-fatal by default).
 
 ### Fixed
 - `gofmt -l` is clean across the tree (two test files were
