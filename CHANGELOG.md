@@ -4,7 +4,7 @@ All notable changes to `go-pubsub` are documented in this file. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [v1.1.0] - 2026-06-13
 
 ### Changed
 - **Breaking**: rename `pubsub.SubscriptionCapacityExceed` →
@@ -149,6 +149,42 @@ exercised statements).
   No library-code changes; the existing unit tests in `pubsub/`
   remain the contract.
 
+### Changed (examples split)
+- `cmd/quickstart` split into two binaries so the README's
+  **Quick Start** has a runnable counterpart.
+  - `cmd/quickstart/main.go` (NEW) — a ~50-line minimum viable
+    example that mirrors README's Quick Start verbatim:
+    one broker, one publisher, one subscriber, one topic,
+    one publish, one receive. `go run ./cmd/quickstart`
+    prints `Received: CPU over 90%!`. Replaces the
+    13-phase end-to-end script that previously lived in
+    this directory.
+  - `cmd/quickstart-e2e/main.go` (NEW) — the previous
+    13-phase ~260-line end-to-end walk-through, unchanged in
+    behavior. Renamed the trailing "ok" line from
+    `quickstart: ok` → `quickstart-e2e: ok` to match the new
+    binary name.
+  - `cmd/quickstart/README.md` rewritten to describe the
+    minimal Quick Start binary and point at
+    `cmd/quickstart-e2e/README.md` for the deeper
+    walk-through.
+  - `cmd/quickstart-e2e/README.md` (NEW) — the previous
+    contents of `cmd/quickstart/README.md`, with the
+    internal `cmd/quickstart/main.go` references updated to
+    `cmd/quickstart-e2e/main.go`.
+  - `README.md` Quick Start rewritten to match the new
+    minimal binary 1:1 (the old snippet had drifted from
+    the actual library behaviour in three places: `panic`
+    instead of `log.Fatal` was fine, but the IIFE-wrapped
+    `defer sub.Close()` was dead ceremony, the
+    `WithTimeout[string](5*time.Second)` was unreachable
+    in the happy-path run, and the `// Output: "..."`
+    comment is a godoc convention that doesn't apply to
+    `cmd/` binaries). The new snippet uses synchronous
+    `Publish` (so the 200 ms sliding timer demonstrably
+    resets on the happy path) and points at
+    `cmd/quickstart-e2e` for the long-form demo.
+
 ### Changed (test-side cleanup)
 - Test files now share a single `testLogger()` / `benchLogger()` pair
   in `pubsub/helpers_test.go`; ~19 inline `slog.New(...)` duplicates
@@ -212,5 +248,5 @@ gating them). `BenchmarkPublishSingleSubscriber` stays at ~108 ns/op,
 - README-cited benchmark suite (`bench_test.go`).
 - `cmd/quickstart` runnable example.
 
-[Unreleased]: https://github.com/F2077/go-pubsub/compare/v1.0.0...HEAD
+[v1.1.0]: https://github.com/F2077/go-pubsub/compare/v1.0.0...v1.1.0
 [v1.0.0]: https://github.com/F2077/go-pubsub/releases/tag/v1.0.0
