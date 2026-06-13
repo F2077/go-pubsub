@@ -1,6 +1,7 @@
 package pubsub
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -146,20 +147,30 @@ func (b *Broker[T]) String() string {
 
 func (b *Broker[T]) createOrLoadSubscription(topic string) (*subscription[T], error) {
 	b.rwMutex.RLock()
-	b.logger.Debug("Broker.createOrLoadSubscription acquired read lock", slog.Any("broker", b))
+	if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		b.logger.Debug("Broker.createOrLoadSubscription acquired read lock", slog.Any("broker", b))
+	}
 	if sub, ok := b.subscriptions[topic]; ok {
 		b.rwMutex.RUnlock()
-		b.logger.Debug("Broker.createOrLoadSubscription released read lock", slog.Any("broker", b))
+		if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+			b.logger.Debug("Broker.createOrLoadSubscription released read lock", slog.Any("broker", b))
+		}
 		return sub, nil
 	}
 	b.rwMutex.RUnlock()
-	b.logger.Debug("Broker.createOrLoadSubscription released read lock", slog.Any("broker", b))
+	if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		b.logger.Debug("Broker.createOrLoadSubscription released read lock", slog.Any("broker", b))
+	}
 
 	b.rwMutex.Lock()
-	b.logger.Debug("Broker.createOrLoadSubscription acquired write lock", slog.Any("broker", b))
+	if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		b.logger.Debug("Broker.createOrLoadSubscription acquired write lock", slog.Any("broker", b))
+	}
 	defer func() {
 		b.rwMutex.Unlock()
-		b.logger.Debug("Broker.createOrLoadSubscription released write lock", slog.Any("broker", b))
+		if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+			b.logger.Debug("Broker.createOrLoadSubscription released write lock", slog.Any("broker", b))
+		}
 	}()
 
 	// 再次检查防止竞态(也就是可能在上边的加读锁的检查topic对应订阅的时候其他协程创建了订阅)
@@ -252,10 +263,14 @@ func (s *subscription[T]) removeSubscriber(subscriber *Subscriber[T]) {
 
 func (s *subscription[T]) deliver(message T) {
 	s.rwMutex.RLock()
-	s.logger.Debug("subscription.deliver acquired read lock")
+	if s.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		s.logger.Debug("subscription.deliver acquired read lock")
+	}
 	defer func() {
 		s.rwMutex.RUnlock()
-		s.logger.Debug("subscription.deliver released read lock")
+		if s.logger.Enabled(context.TODO(), slog.LevelDebug) {
+			s.logger.Debug("subscription.deliver released read lock")
+		}
 	}()
 
 	for _, subscriber := range s.subscribers {

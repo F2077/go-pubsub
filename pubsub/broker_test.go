@@ -1,8 +1,11 @@
 package pubsub
 
 import (
+	"bytes"
 	"errors"
+	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -413,5 +416,57 @@ func TestConcurrentPublishAllDelivered(t *testing.T) {
 
 	if got := received.Load(); got != int64(expectedTotal) {
 		t.Fatalf("expected %d messages, got %d", expectedTotal, got)
+	}
+}
+
+// --- Debug-logger coverage smoke test -------------------------------------
+
+// TestDebugLevelLoggerExercisesHotPath uses a Debug-level logger to drive
+// the gated Debug call sites in createOrLoadSubscription and deliver. With
+// testLogger() at Info level those bodies are unreachable; this test
+// exists to keep coverage of the if-bodies honest so the Enabled gate
+// isn't quietly turned into dead code.
+func TestDebugLevelLoggerExercisesHotPath(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	broker, err := NewBroker[string](WithLogger[string](logger))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, err := NewSubscriber[string](broker).Subscribe("debug_topic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func(sub *Subscription[string]) { _ = sub.Close() }(sub)
+
+	pub := NewPublisher(broker)
+	if err := pub.Publish("debug_topic", "msg"); err != nil {
+		t.Fatal(err)
+	}
+	// 测 createOrLoadSubscription 的写锁路径（topic 还没注册过时）
+	if err := pub.Publish("fresh_topic", "msg2"); err != nil {
+		t.Fatal(err)
+	}
+	// 消费一条消息，让 deliver 真的执行
+	select {
+	case <-sub.Ch:
+	case <-time.After(time.Second):
+		t.Fatal("did not receive message")
+	}
+
+	out := buf.String()
+	wantSubs := []string{
+		"Broker.createOrLoadSubscription acquired read lock",
+		"Broker.createOrLoadSubscription released read lock",
+		"Broker.createOrLoadSubscription acquired write lock",
+		"Broker.createOrLoadSubscription released write lock",
+		"subscription.deliver acquired read lock",
+		"subscription.deliver released read lock",
+	}
+	for _, want := range wantSubs {
+		if !strings.Contains(out, want) {
+			t.Errorf("debug output missing %q\nfull output:\n%s", want, out)
+		}
 	}
 }
