@@ -441,19 +441,15 @@ func TestReSubscribeSameTopicCleansUpOldTimer(t *testing.T) {
 	}
 }
 
-// TestResetTimerDrainsFiredTimer is a synthetic test for the standard
-// time.Timer.Reset pattern: when the timer has already fired, t.Stop()
-// returns false and the channel may carry a stale value. The drain
-// `select { case <-t.C: default: }` prevents the fire goroutine from
-// consuming that stale value and calling handleTimeout spuriously,
-// which would deliver a false ErrSubscriptionTimeout to the user.
+// TestResetTimerRespectsGo123ResetSemantics 是对 Go 1.23+ time.Timer
+// 语义的回归测试：Reset 之后 t.C 上的 stale value 不会再被读出，所以
+// resetTimer 自身不需要 Stop+drain。少一次 mutex 内的 select，每次
+// Publish 走 resetTimer 少一次 channel 争用。
 //
-// Without the drain, a publish that races a natural timeout (timer
-// fires, then publish's resetTimer runs before the fire goroutine
-// reads) would produce a ghost timeout. We simulate that race by
-// synthesizing a Subscriber state where the timer is already expired
-// and the fire goroutine is parked on t.C.
-func TestResetTimerDrainsFiredTimer(t *testing.T) {
+// 构造一个必然已 fire 的 timer，挂在 fire goroutine 上让它 park 在
+// <-t.C 上。resetTimer 之后给 fire goroutine 时间醒；如果 Go 1.23+ 的
+// 保证失效（旧 value 仍可被读），errCh 会被错误地投递一次。
+func TestResetTimerRespectsGo123ResetSemantics(t *testing.T) {
 	broker, err := NewBroker[string](WithLogger[string](testLogger()))
 	if err != nil {
 		t.Fatal(err)
@@ -462,7 +458,6 @@ func TestResetTimerDrainsFiredTimer(t *testing.T) {
 	// 关键：让 handleTimeout 在 topics 检查时不会 short-circuit
 	s.topics["x"] = struct{}{}
 
-	// 构造一个必然已 fire 的 timer
 	t0 := time.NewTimer(5 * time.Millisecond)
 	time.Sleep(20 * time.Millisecond)
 
@@ -480,19 +475,15 @@ func TestResetTimerDrainsFiredTimer(t *testing.T) {
 		s.runTopicTimer("x", t0, errCh, done)
 	}()
 
-	// 触发 resetTimer — t0 已 fire，t.Stop() 应返回 false，走 drain
 	s.resetTimer("x")
-
-	// 给 fire goroutine 时间；如果 drain 失败它会读 stale value 并 send 到 errCh
 	time.Sleep(50 * time.Millisecond)
 
 	select {
 	case err := <-errCh:
-		t.Fatalf("spurious timeout from undrained stale channel value: %v", err)
+		t.Fatalf("spurious timeout from old fire value: %v", err)
 	default:
 	}
 
-	// 清理
 	close(done)
 	wg.Wait()
 }

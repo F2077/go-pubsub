@@ -278,21 +278,15 @@ func (s *Subscriber[T]) runTopicTimer(topic string, t *time.Timer, errCh chan er
 	}
 }
 
-// 重置定时器
+// 重置定时器。Go 1.23+ 文档明确：Reset 之后的 receive 不可能再拿到旧
+// duration 对应的时间值，所以无需先 Stop 再 drain。少一次 mutex 内的
+// channel select，每次 Publish 也就少一次 hot-path 负担。
 func (s *Subscriber[T]) resetTimer(topic string) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
 	if timeout, ok := s.timeouts[topic]; ok && timeout > 0 {
 		if t, ok := s.timers[topic]; ok {
-			// 官方推荐模式：Stop + drain 防止 stale channel value 被 fire
-			// goroutine 误读走，触发虚假的 timeout。
-			if !t.Stop() {
-				select {
-				case <-t.C:
-				default:
-				}
-			}
 			t.Reset(timeout)
 		}
 	}
