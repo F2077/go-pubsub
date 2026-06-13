@@ -49,8 +49,14 @@ Thumbs.db
 desktop.ini
 
 # ---- Local session scratch (Claude Code) ----
-.claude/settings.local.json
-.remember/
+# `.claude/` holds project-scoped AI rules and per-conversation memory
+# (memory, settings.local.json, .remember/...). None of this is part
+# of the library the user ships; it's our local working environment.
+# `docs/superpowers/` holds design specs + implementation plans from
+# brainstorming sessions; they're useful in-tree for the author but
+# not part of the published package surface.
+.claude/
+docs/superpowers/
 
 # --- Profiling artifacts (see PROFILING.md) ---
 .profile/
