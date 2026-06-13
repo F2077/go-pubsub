@@ -150,29 +150,33 @@ func (b *Broker[T]) String() string {
 }
 
 func (b *Broker[T]) createOrLoadSubscription(topic string) (*subscription[T], error) {
-	b.rwMutex.RLock()
-	if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+	// 把 5 次重复的 logger.Enabled 折成一次。context.TODO() 在 logger
+	// 实现里被直接丢弃（broker 自带的 TextHandler 不读 ctx），但走 slog
+	// 文档要求传一个，所以留着。
+	debug := b.logger.Enabled(context.TODO(), slog.LevelDebug)
+	if debug {
 		b.logger.Debug("Broker.createOrLoadSubscription acquired read lock", slog.Any("broker", b))
 	}
+	b.rwMutex.RLock()
 	if sub, ok := b.subscriptions[topic]; ok {
 		b.rwMutex.RUnlock()
-		if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		if debug {
 			b.logger.Debug("Broker.createOrLoadSubscription released read lock", slog.Any("broker", b))
 		}
 		return sub, nil
 	}
 	b.rwMutex.RUnlock()
-	if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+	if debug {
 		b.logger.Debug("Broker.createOrLoadSubscription released read lock", slog.Any("broker", b))
 	}
 
 	b.rwMutex.Lock()
-	if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+	if debug {
 		b.logger.Debug("Broker.createOrLoadSubscription acquired write lock", slog.Any("broker", b))
 	}
 	defer func() {
 		b.rwMutex.Unlock()
-		if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		if debug {
 			b.logger.Debug("Broker.createOrLoadSubscription released write lock", slog.Any("broker", b))
 		}
 	}()
@@ -282,13 +286,14 @@ func (s *subscription[T]) removeSubscriber(subscriber *Subscriber[T]) {
 }
 
 func (s *subscription[T]) deliver(message T) {
-	s.rwMutex.RLock()
-	if s.logger.Enabled(context.TODO(), slog.LevelDebug) {
+	debug := s.logger.Enabled(context.TODO(), slog.LevelDebug)
+	if debug {
 		s.logger.Debug("subscription.deliver acquired read lock")
 	}
+	s.rwMutex.RLock()
 	defer func() {
 		s.rwMutex.RUnlock()
-		if s.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		if debug {
 			s.logger.Debug("subscription.deliver released read lock")
 		}
 	}()
