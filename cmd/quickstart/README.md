@@ -80,7 +80,7 @@ genuinely cross-process pieces — is intentionally left out, and
 
 Phases 10–11 close every subscription, but the broker reaps empty
 topics in a separate goroutine to avoid a `subscription → broker`
-lock-order deadlock (see `pubsub/broker.go:201-207`). A freshly-emptied
+lock-order deadlock (see `pubsub/broker.go:285`). A freshly-emptied
 topic may therefore still appear in the `Topics()` snapshot for a
 short window after `subscriber.Close()` returns. This is intentional,
 documented behaviour, not a leak.

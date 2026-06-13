@@ -123,7 +123,7 @@ From the README's own guidance — and worth restating so future changes don't a
   wrong reason until this guard was added.
 - **Topic reaping is asynchronous.** `subscription.removeSubscriber` fires
   `broker.tryRemoveSubscription` in a separate goroutine to avoid
-  `subscription → broker` lock-order deadlock (see `broker.go:201-207`).
+  `subscription → broker` lock-order deadlock (see `broker.go:285`).
   A freshly-emptied topic may still be visible to `Broker.Topics()`
   immediately after `Subscription.Close()` returns.
 - **`Subscriber.Subscribes` leaks partial subscriptions on failure.** If

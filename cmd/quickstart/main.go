@@ -128,15 +128,17 @@ func run() error {
 	// === Phase 6: 起 4 个 drain goroutine 各自消费一条 sub ============
 	// 收尾时通过 done channel 等齐。subA 三个 drain 等 Ch 关闭；
 	// subBsub 的 drain 同时监听 Ch + ErrCh（任一边关闭即退出）。
+	fmt.Println("\n=== 6. Drain goroutines (4× spawned) ===")
 	dones := []<-chan struct{}{
 		drainSubscription("subA:metrics", subsA[0], nil),
 		drainSubscription("subA:audit", subsA[1], nil),
 		drainSubscription("subA:alerts", subsA[2], nil),
 		drainSubscription("subB:alerts", subBsub, subBsub.ErrCh),
 	}
+	fmt.Println("  4 drainers running; will be joined in Phase 12")
 
 	// === Phase 7: Publish 突发流量 ====================================
-	fmt.Println("\n=== 6. Publish burst ===")
+	fmt.Println("\n=== 7. Publish burst ===")
 	for i := 0; i < 5; i++ {
 		_ = pubA.Publish("metrics", fmt.Sprintf("m=%d", i))
 		_ = pubA.Publish("audit", fmt.Sprintf("a=%d", i))
@@ -145,7 +147,7 @@ func run() error {
 	fmt.Println("  15 messages dispatched (5 per topic × 3 topics)")
 
 	// === Phase 8: 容量错误（tiny broker，cap=2）=========================
-	fmt.Println("\n=== 7. ErrSubscriptionCapacityExceeded (tiny broker, cap=2) ===")
+	fmt.Println("\n=== 8. ErrSubscriptionCapacityExceeded (tiny broker, cap=2) ===")
 	pubT := pubsub.NewPublisher[string](tinyBroker)
 	subT := pubsub.NewSubscriber[string](tinyBroker)
 	if err := pubT.Publish("t1", "x"); err != nil {
@@ -165,7 +167,7 @@ func run() error {
 	// === Phase 9: 等 subBsub 的滑动 timeout 自然 fire ===================
 	// 上面最后一次 publish 之后 400ms，timer 就会 fire。
 	// drain goroutine 看到 ErrSubscriptionTimeout 就会打印并退出。
-	fmt.Println("\n=== 8. Sliding timeout (subBsub, 400ms) ===")
+	fmt.Println("\n=== 9. Sliding timeout (subBsub, 400ms) ===")
 	time.Sleep(500 * time.Millisecond)
 
 	// === Phase 10: ErrSubscriberClosed 路径 =============================
@@ -174,7 +176,7 @@ func run() error {
 	//  2) subB.Close() 第一次 -> 所有 topic 都已经退订，no-op，nil
 	//  3) subB.Close() 第二次 -> 返回 ErrSubscriberClosed
 	//  4) subB.Subscribe(...) -> 返回 ErrSubscriberClosed
-	fmt.Println("\n=== 9. ErrSubscriberClosed ===")
+	fmt.Println("\n=== 10. ErrSubscriberClosed ===")
 	if err := subBsub.Close(); err != nil {
 		return fmt.Errorf("subBsub.Close: %w", err)
 	}
@@ -196,7 +198,7 @@ func run() error {
 	// Subscriber.Close 不会触发 OnClose（设计上 OnClose 只挂在
 	// Subscription.Close 上），所以要拿到 3 个 OnClose 回调只能
 	// 显式 sub.Close() 三个。
-	fmt.Println("\n=== 10. OnClose × 3 (subA's subscriptions) ===")
+	fmt.Println("\n=== 11. OnClose × 3 (subA's subscriptions) ===")
 	for _, s := range subsA {
 		if err := s.Close(); err != nil {
 			return fmt.Errorf("subA sub.Close: %w", err)
@@ -212,7 +214,7 @@ func run() error {
 	}
 
 	// === Phase 12: 等所有 drain goroutine 退出 =========================
-	fmt.Println("\n=== 11. Drain summary ===")
+	fmt.Println("\n=== 12. Drain summary ===")
 	for _, done := range dones {
 		<-done
 	}
@@ -221,7 +223,9 @@ func run() error {
 	// === Phase 13: 退出前 introspect broker ============================
 	// 异步 topic reaping：topic 最后一个订阅者退订后，broker 在独立
 	// goroutine 里才回收，所以 Topics() 看到的可能是 0~3 的中间态。
-	fmt.Println("\n=== 12. Broker.Topics() at exit ===")
+	// 最坏情况：3 个 topic 都还在（reaping 还没跑）；最好情况：0
+	// （reaping 跑得比 Close 完还快）。实测通常落在 0~1。
+	fmt.Println("\n=== 13. Broker.Topics() at exit ===")
 	topics := mainBroker.Topics()
 	fmt.Printf("  %d topic(s) still tracked: %v\n", len(topics), topics)
 

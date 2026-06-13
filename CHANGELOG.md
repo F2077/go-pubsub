@@ -169,6 +169,33 @@ exercised statements).
 - README bench table refreshed from the post-simplify
   `make bench` run.
 
+### Changed (simplify pass)
+- `pubsub/subscriber.go`: drop `tt.t.Stop()` in the `runTopicTimer`
+  done-branch. The goroutine is about to return and `tt.t.C` has no
+  consumer; same reasoning as `744d7df` for `resetTimer` — the timer
+  is unreachable once `unsubscribe` deletes the `topicTimer`, so GC
+  handles cleanup. (commit `e5ec990`)
+- `pubsub/subscriber.go`: drop `if s.closed { return ErrSubscriberClosed }`
+  in `unsubscribe`. `Subscriber.Close` drains `s.subs` *before* setting
+  `s.closed=true`, and `Subscription.Close` is only callable while
+  `s.closed` is still false — the `s.subs[sub]` short-circuit is the
+  real idempotency guard, the `closed`-flag check was redundant.
+  (commit `e5ec990`)
+- `pubsub/subscriber.go`: gate the two remaining unconditional
+  `slog.Any` calls in `Subscribe` (timeout-config branch) and
+  `handleTimeout` behind `Enabled()`. The other 7+ Debug sites in
+  the file already hoist a `debug` bool; these two slipped through.
+  (commit `e5ec990`)
+- `pubsub/bench_test.go`: drop the duplicate `b.StopTimer()` in
+  `BenchmarkHighLoadParallel` (lines 299 and 302 both stopped the
+  timer back-to-back; second call is a no-op). (commit `e5ec990`)
+
+Coverage drops 95.9% → 95.4% by design: the dropped `tt.t.Stop()`
+branch was 100% exercised by the race tests, and the new if-gates
+are never entered at `LevelError` (which is the whole point of
+gating them). `BenchmarkPublishSingleSubscriber` stays at ~108 ns/op,
+0 B/op, 0 allocs/op.
+
 ### Removed
 - GPL-3.0 license. The project is now MIT.
 
