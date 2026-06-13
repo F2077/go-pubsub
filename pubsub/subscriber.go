@@ -78,11 +78,11 @@ type Subscriber[T any] struct {
 // own UUID and an empty topic set. Use Subscribe to attach to topics.
 func NewSubscriber[T any](broker *Broker[T]) *Subscriber[T] {
 	return &Subscriber[T]{
-		id:      uuid.New().String(),
-		broker:  broker,
-		topics:  map[string]struct{}{},
-		subs:    map[*Subscription[T]]struct{}{},
-		timers:  make(map[string]*topicTimer),
+		id:     uuid.New().String(),
+		broker: broker,
+		topics: map[string]struct{}{},
+		subs:   map[*Subscription[T]]struct{}{},
+		timers: make(map[string]*topicTimer),
 	}
 }
 
