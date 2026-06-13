@@ -242,8 +242,9 @@ func drainSubscription[T any](label string, sub *pubsub.Subscription[T], errCh <
 		defer close(done)
 		if errCh == nil {
 			// 没传 ErrCh：单纯排空 Ch。subA 的 3 个 sub 走这条。
+			// 静默排空到 sub.Ch 关闭；输出让 phase 7 那种 burst 自证。
 			for range sub.Ch {
-				// 静默排空；输出让 phase 7 那种 burst 自证
+				_ = struct{}{}
 			}
 			return
 		}

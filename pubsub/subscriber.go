@@ -28,8 +28,8 @@ type ChannelSize uint16
 // Pre-defined ChannelSize values. The Medium default applies when
 // Subscribe is called without WithChannelSize.
 var (
-	Block  ChannelSize = 0 // Block makes the per-topic channel unbuffered: Publishes block until the subscriber receives.
-	Single ChannelSize = 1 // Single makes the per-topic channel buffered with capacity 1.
+	Block  ChannelSize // Block makes the per-topic channel unbuffered: Publishes block until the subscriber receives.
+	Single ChannelSize = 1
 	Small              = Single * 10
 	Medium             = Small * 10 // Medium is the default channel size (100).
 	Large              = Medium * 10
