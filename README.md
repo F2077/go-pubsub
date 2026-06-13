@@ -20,54 +20,83 @@ go get github.com/F2077/go-pubsub
 
 ## Quick Start
 
+The shortest path is a runnable four-step recipe. The same program
+lives at `cmd/quickstart/main.go` — clone the repo and run:
+
+```bash
+go run ./cmd/quickstart
+```
+
+Expected output:
+
+```
+Received: CPU over 90%!
+```
+
+Source:
+
 ```go
 package main
 
 import (
 	"fmt"
-	"github.com/F2077/go-pubsub/pubsub"
+	"log"
 	"time"
+
+	"github.com/F2077/go-pubsub/pubsub"
 )
 
 func main() {
-	// 1. Create a broker (supports generics)
+	// 1. Create a broker.
 	broker, err := pubsub.NewBroker[string]()
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
-	// 2. Create a publisher
+	// 2. Create a publisher and a subscriber bound to that broker.
 	publisher := pubsub.NewPublisher[string](broker)
-
-	// 3. Create a subscriber
 	subscriber := pubsub.NewSubscriber[string](broker)
 
-	// 4. Subscribe to a topic with buffer size and timeout
+	// 3. Subscribe to a topic. WithChannelSize sets the per-topic
+	// channel's buffer; WithTimeout arms a sliding 200ms timer that
+	// resets on every successful publish and fires ErrSubscriptionTimeout
+	// to ErrCh if no publish lands within the window.
 	sub, err := subscriber.Subscribe("alerts",
-		pubsub.WithChannelSize[string](pubsub.Medium), // Buffer 100 messages
-		pubsub.WithTimeout[string](5*time.Second),     // Auto-close if idle
+		pubsub.WithChannelSize[string](pubsub.Medium),
+		pubsub.WithTimeout[string](200*time.Millisecond),
 	)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
-	defer func(sub *pubsub.Subscription[string]) {
-		_ = sub.Close()
-	}(sub)
+	defer sub.Close()
 
-	// 5. Publish a message
-	go func() {
-		_ = publisher.Publish("alerts", "CPU over 90%!")
-	}()
+	// 4. Publish synchronously. A successful delivery resets the
+	// sliding timer in step 3, so the 200ms window is irrelevant
+	// for a happy-path run.
+	if err := publisher.Publish("alerts", "CPU over 90%!"); err != nil {
+		log.Fatal(err)
+	}
 
-	// 6. Listen for messages or timeouts
+	// 5. Receive. With WithTimeout set, ErrCh is a buffered error
+	// channel that receives ErrSubscriptionTimeout exactly once when
+	// the timer fires; without WithTimeout it would be nil. In this
+	// happy-path the timer never fires — Publish landed first.
 	select {
 	case msg := <-sub.Ch:
-		fmt.Println("Received:", msg) // Output: "CPU over 90%!"
+		fmt.Println("Received:", msg)
 	case err := <-sub.ErrCh:
-		fmt.Println("Error:", err)
+		log.Println("Timeout:", err)
 	}
 }
+```
 
+For a deeper walk-through that exercises every exported symbol
+(`Subscribes`, `OnClose`, the lazy-`ErrCh` contract, the
+capacity-exceeded path, sliding timeouts firing naturally, …) see
+`cmd/quickstart-e2e`:
+
+```bash
+go run ./cmd/quickstart-e2e
 ```
 
 ## Key Features
