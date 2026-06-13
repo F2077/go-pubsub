@@ -4,6 +4,30 @@ All notable changes to `go-pubsub` are documented in this file. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.1.1] - 2026-06-13
+
+### Fixed
+- The `Source code` archive and on-GitHub source listing of `v1.1.0`
+  inadvertently contained 5 maintainer-only files (3 under
+  `.claude/projects/.../memory/`, 2 under `docs/superpowers/`) that
+  were tracked in git at the time of the v1.1.0 release. They have
+  been untracked in `HEAD` since commit `d455149`; `v1.1.1` is cut
+  from that commit so the published archive no longer contains
+  them.
+
+  **Impact on `go get` users:** none. Those paths are not imported
+  by the `pubsub` package; the only observable effect of v1.1.0
+  was the extra 5 files in the `Source code (ZIP)` download and
+  the on-repo source listing. The `go.mod`/module-zip hash is
+  unaffected by the file-removal commit, so the v1.1.0 and
+  v1.1.1 module zips differ only by those 5 files (which are
+  outside the Go module's import graph). No API change; no
+  behavioural change.
+
+  **Action:** upgrade with
+  `go get github.com/F2077/go-pubsub@v1.1.1`. The `go.sum` delta
+  is exactly the module-zip hash; everything else is unchanged.
+
 ## [v1.1.0] - 2026-06-13
 
 ### Changed
@@ -248,5 +272,6 @@ gating them). `BenchmarkPublishSingleSubscriber` stays at ~108 ns/op,
 - README-cited benchmark suite (`bench_test.go`).
 - `cmd/quickstart` runnable example.
 
+[v1.1.1]: https://github.com/F2077/go-pubsub/compare/v1.1.0...v1.1.1
 [v1.1.0]: https://github.com/F2077/go-pubsub/compare/v1.0.0...v1.1.0
 [v1.0.0]: https://github.com/F2077/go-pubsub/releases/tag/v1.0.0
