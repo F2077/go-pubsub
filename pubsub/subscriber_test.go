@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -338,4 +339,104 @@ func TestSubscriber_Subscribes(t *testing.T) {
 
 	_, err = subscriber2.Subscribes([]string{"topicA", "topicB"})
 	assert.ErrorIs(t, err, ErrSubscriptionCapacityExceeded)
+}
+
+// --- Timer lifecycle -----------------------------------------------------
+
+// TestReSubscribeSameTopicCleansUpOldTimer verifies that calling Subscribe
+// a second time for the same topic with WithTimeout replaces the prior
+// timer and its fire goroutine without leaking either. The old fire
+// goroutine must observe the closed done channel and exit; the new one
+// must own the fresh *time.Timer. goleak.VerifyTestMain in TestMain is
+// the safety net that fails the test binary if either goroutine leaks.
+func TestReSubscribeSameTopicCleansUpOldTimer(t *testing.T) {
+	broker, err := NewBroker[string](WithLogger[string](testLogger()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub := NewSubscriber[string](broker)
+
+	first, err := sub.Subscribe("dup_topic", WithTimeout[string](1*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = sub.Close() }()
+
+	// Re-Subscribe same topic with a different timeout.
+	second, err := sub.Subscribe("dup_topic", WithTimeout[string](2*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatal("re-Subscribe should return a fresh *Subscription, not the cached one")
+	}
+
+	// Verify the subscriber's internal map points at exactly one timer
+	// (the new one) — old timer entry should have been replaced.
+	sub.mutex.Lock()
+	timerCount := len(sub.timers)
+	doneCount := len(sub.timerDones)
+	sub.mutex.Unlock()
+	if timerCount != 1 {
+		t.Errorf("expected 1 timer entry after re-Subscribe, got %d", timerCount)
+	}
+	if doneCount != 1 {
+		t.Errorf("expected 1 timerDones entry after re-Subscribe, got %d", doneCount)
+	}
+}
+
+// TestResetTimerDrainsFiredTimer is a synthetic test for the standard
+// time.Timer.Reset pattern: when the timer has already fired, t.Stop()
+// returns false and the channel may carry a stale value. The drain
+// `select { case <-t.C: default: }` prevents the fire goroutine from
+// consuming that stale value and calling handleTimeout spuriously,
+// which would deliver a false ErrSubscriptionTimeout to the user.
+//
+// Without the drain, a publish that races a natural timeout (timer
+// fires, then publish's resetTimer runs before the fire goroutine
+// reads) would produce a ghost timeout. We simulate that race by
+// synthesizing a Subscriber state where the timer is already expired
+// and the fire goroutine is parked on t.C.
+func TestResetTimerDrainsFiredTimer(t *testing.T) {
+	broker, err := NewBroker[string](WithLogger[string](testLogger()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewSubscriber[string](broker)
+	// 关键：让 handleTimeout 在 topics 检查时不会 short-circuit
+	s.topics["x"] = struct{}{}
+
+	// 构造一个必然已 fire 的 timer
+	t0 := time.NewTimer(5 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
+
+	s.timers["x"] = t0
+	s.timeouts["x"] = 1 * time.Hour
+
+	errCh := make(chan error, 10)
+	done := make(chan struct{})
+	s.timerDones["x"] = done
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		s.runTopicTimer("x", t0, errCh, done)
+	}()
+
+	// 触发 resetTimer — t0 已 fire，t.Stop() 应返回 false，走 drain
+	s.resetTimer("x")
+
+	// 给 fire goroutine 时间；如果 drain 失败它会读 stale value 并 send 到 errCh
+	time.Sleep(50 * time.Millisecond)
+
+	select {
+	case err := <-errCh:
+		t.Fatalf("spurious timeout from undrained stale channel value: %v", err)
+	default:
+	}
+
+	// 清理
+	close(done)
+	wg.Wait()
 }
