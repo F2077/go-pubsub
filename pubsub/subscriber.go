@@ -125,8 +125,16 @@ func (s *Subscriber[T]) Subscribe(topic string, opts ...SubscriptionOption[T]) (
 	// 创建对应主题的消息通道
 	ch, _ := s.channels.LoadOrStore(topic, make(chan T, options.size))
 
-	// 创建对应主题的错误通道
-	errCh, _ := s.errChannels.LoadOrStore(topic, make(chan error, 1))
+	// 创建对应主题的错误通道（仅在启用 timeout 时才分配）。
+	// 无 timeout 时 ErrCh 留 nil——receive-only nil channel 永久阻塞，
+	// 对不可能超时的订阅者是正确行为。
+	errCh := func() chan error {
+		if options.timeout <= 0 {
+			return nil
+		}
+		raw, _ := s.errChannels.LoadOrStore(topic, make(chan error, 1))
+		return raw.(chan error)
+	}()
 
 	// 将当前订阅者添加到订阅
 	sub.addSubscriber(s)
@@ -156,14 +164,14 @@ func (s *Subscriber[T]) Subscribe(topic string, opts ...SubscriptionOption[T]) (
 
 		done := make(chan struct{})
 		s.timerDones[topic] = done
-		go s.runTopicTimer(topic, t, errCh.(chan error), done)
+		go s.runTopicTimer(topic, t, errCh, done)
 	}
 
 	return &Subscription[T]{
 		topic:      topic,
 		subscriber: s,
 		Ch:         ch.(chan T),
-		ErrCh:      errCh.(chan error),
+		ErrCh:      errCh,
 	}, nil
 }
 
@@ -307,7 +315,10 @@ func (s *Subscriber[T]) handleTimeout(topic string, errCh chan<- error) {
 // Subscription is the read-only handle returned by Subscribe. Ch receives
 // messages published to the topic; ErrCh receives ErrSubscriptionTimeout
 // when a Subscribe with WithTimeout receives no message within the
-// configured idle period. Close releases the topic.
+// configured idle period. If Subscribe was called without WithTimeout,
+// ErrCh is nil — a receive from a nil channel blocks forever, which is
+// the correct behavior for a subscription that cannot time out.
+// Close releases the topic.
 //
 // Subscription is single-topic; create one Subscription per (subscriber,
 // topic) pair.

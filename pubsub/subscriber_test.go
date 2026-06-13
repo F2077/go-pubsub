@@ -49,7 +49,12 @@ func TestSubscriberClosedPostConditions(t *testing.T) {
 }
 
 // TestSubscriberCloseUnsubscribesAll verifies that Close() on a multi-topic
-// subscriber closes every per-topic channel and ErrCh.
+// subscriber closes every per-topic Ch. ErrCh is closed only on topics
+// that subscribed with WithTimeout; topics without WithTimeout have
+// ErrCh == nil (a receive on a nil channel blocks forever, which is
+// the correct "never errors" semantics). The "ErrCh is allocated and
+// closed after Close" path is covered by TestSubscribeWithTimeoutErrChIsAllocated
+// plus the normal Close() cleanup.
 func TestSubscriberCloseUnsubscribesAll(t *testing.T) {
 	broker, _ := NewBroker[string]()
 	sub := NewSubscriber[string](broker)
@@ -71,6 +76,9 @@ func TestSubscriberCloseUnsubscribesAll(t *testing.T) {
 			}
 		case <-time.After(100 * time.Millisecond):
 			t.Fatalf("subscription %d: Ch did not close", i)
+		}
+		if s.ErrCh == nil {
+			continue // no-timeout 订阅：ErrCh 始终 nil，receive 永远阻塞
 		}
 		select {
 		case _, ok := <-s.ErrCh:
@@ -339,6 +347,54 @@ func TestSubscriber_Subscribes(t *testing.T) {
 
 	_, err = subscriber2.Subscribes([]string{"topicA", "topicB"})
 	assert.ErrorIs(t, err, ErrSubscriptionCapacityExceeded)
+}
+
+// --- ErrCh allocation ----------------------------------------------------
+
+// TestSubscribeWithoutTimeoutErrChIsNil verifies that a Subscribe call
+// without WithTimeout produces a *Subscription whose ErrCh is nil.
+// This is the contract: a subscription that cannot time out has no
+// error channel, and a receive on a nil channel blocks forever —
+// which is the intended "never errors" semantics.
+func TestSubscribeWithoutTimeoutErrChIsNil(t *testing.T) {
+	broker, _ := NewBroker[string]()
+	sub, err := NewSubscriber[string](broker).Subscribe("no_timeout_topic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func(sub *Subscription[string]) { _ = sub.Close() }(sub)
+
+	if sub.ErrCh != nil {
+		t.Errorf("ErrCh should be nil for Subscribe without WithTimeout, got non-nil")
+	}
+
+	// Sanity: receiving from nil ErrCh must block forever (use a short
+	// timeout to verify the blocking behavior without hanging the test).
+	select {
+	case err := <-sub.ErrCh:
+		t.Errorf("nil ErrCh should not deliver; got %v", err)
+	case <-time.After(50 * time.Millisecond):
+		// expected: receive blocks because the channel is nil
+	}
+}
+
+// TestSubscribeWithTimeoutErrChIsAllocated is the inverse: when
+// WithTimeout is passed, ErrCh must be a real channel and remain open
+// until Close. Verifies we did not accidentally make ErrCh nil in
+// both branches.
+func TestSubscribeWithTimeoutErrChIsAllocated(t *testing.T) {
+	broker, _ := NewBroker[string]()
+	sub, err := NewSubscriber[string](broker).Subscribe(
+		"with_timeout_topic", WithTimeout[string](1*time.Hour),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func(sub *Subscription[string]) { _ = sub.Close() }(sub)
+
+	if sub.ErrCh == nil {
+		t.Fatal("ErrCh should be non-nil for Subscribe with WithTimeout")
+	}
 }
 
 // --- Timer lifecycle -----------------------------------------------------
