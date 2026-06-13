@@ -286,19 +286,26 @@ func (s *subscription[T]) removeSubscriber(subscriber *Subscriber[T]) {
 }
 
 func (s *subscription[T]) deliver(message T) {
+	// 把 lock 范围缩到只 snapshot subscribers 这一步：map iteration 在
+	// Go 1.21+ 是 stable 的，但 release 锁之后可以避免长尾 N=10000 时
+	// 的 Subscribe/unsubscribe 阻塞。每个 subscriber 的 channels 是
+	// sync.Map（lock-free），resetTimer 拿的是 subscriber.mutex 跟
+	// 订阅锁无关——所以后续 fan-out 不需要订阅锁。
 	debug := s.logger.Enabled(context.TODO(), slog.LevelDebug)
 	if debug {
 		s.logger.Debug("subscription.deliver acquired read lock")
 	}
 	s.rwMutex.RLock()
-	defer func() {
-		s.rwMutex.RUnlock()
-		if debug {
-			s.logger.Debug("subscription.deliver released read lock")
-		}
-	}()
+	snapshot := make([]*Subscriber[T], 0, len(s.subscribers))
+	for _, sub := range s.subscribers {
+		snapshot = append(snapshot, sub)
+	}
+	s.rwMutex.RUnlock()
+	if debug {
+		s.logger.Debug("subscription.deliver released read lock")
+	}
 
-	for _, subscriber := range s.subscribers {
+	for _, subscriber := range snapshot {
 		// 仅发送到对应主题的 Channel
 		if ch, ok := subscriber.channels.Load(s.topic); ok {
 			select {
