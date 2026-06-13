@@ -188,7 +188,7 @@ func (b *Broker[T]) createOrLoadSubscription(topic string) (*subscription[T], er
 
 	// 仅在创建新主题时检查容量
 	if len(b.subscriptions) >= int(b.capacity) {
-		return nil, fmt.Errorf("%w subscription capacity exceeds %d", ErrSubscriptionCapacityExceeded, b.capacity)
+		return nil, fmt.Errorf("%w (cap=%d)", ErrSubscriptionCapacityExceeded, b.capacity)
 	}
 
 	sub := newSubscription[T](b.logger, topic, b)
