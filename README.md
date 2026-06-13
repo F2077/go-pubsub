@@ -135,22 +135,22 @@ _All benchmarks run with_ `go test -bench=. -benchmem -run=^$ ./pubsub/...` _via
 
 | Benchmark                                          | Iterations |             ns/op |  B/op | allocs/op |
 |----------------------------------------------------|-----------:|------------------:|------:|----------:|
-| BenchmarkPublishSingleSubscriber-18                |  1 496 839 |       163.4 ns/op |    96 |         2 |
-| BenchmarkMultipleSubscribers-18                    |     42 598 |       5 792 ns/op |    96 |         2 |
-| BenchmarkMultiPublisherSingleSubscriber-18         |     29 958 |       8 006 ns/op |   776 |        21 |
-| BenchmarkMultiPublisherMultipleSubscribers-18      |     13 888 |      16 965 ns/op |   776 |        21 |
-| BenchmarkUltraLargeSubscribersSinglePublisher-18   |         80 |   2 909 316 ns/op |    96 |         2 |
-| BenchmarkPublishChannelSizes/Small-18              |  1 497 117 |       164.2 ns/op |    96 |         2 |
-| BenchmarkPublishChannelSizes/Medium-18             |  1 491 878 |       160.9 ns/op |    96 |         2 |
-| BenchmarkPublishChannelSizes/Large-18              |  1 490 223 |       160.7 ns/op |    96 |         2 |
-| BenchmarkPublishWithTimeout-18                     |    335 841 |       700.7 ns/op |   526 |         7 |
-| BenchmarkHighLoadParallel-18                       |      1 963 |     111 478 ns/op |   103 |         2 |
-| BenchmarkSubscribes-18                             |      2 268 |      93 076 ns/op | 104596 |       973 |
-| BenchmarkBrokerTopics/10-18                        |  1 000 000 |       224.5 ns/op |   256 |         3 |
-| BenchmarkBrokerTopics/100-18                       |    184 555 |       1 196 ns/op |  1888 |         3 |
-| BenchmarkBrokerTopics/1000-18                      |     20 889 |      11 295 ns/op | 16480 |         3 |
-| BenchmarkStructPayload-18                          |  1 468 370 |       164.0 ns/op |    96 |         2 |
-| BenchmarkPublishAutoCreateTopic-18                 |    618 542 |       722.3 ns/op |   418 |         8 |
+| BenchmarkPublishSingleSubscriber-18                |  6 781 626 |       179.6 ns/op |    96 |         2 |
+| BenchmarkMultipleSubscribers-18                    |    183 459 |       6 576 ns/op |    96 |         2 |
+| BenchmarkMultiPublisherSingleSubscriber-18         |    138 272 |       8 243 ns/op |   784 |        22 |
+| BenchmarkMultiPublisherMultipleSubscribers-18      |     61 338 |      20 173 ns/op |   784 |        22 |
+| BenchmarkUltraLargeSubscribersSinglePublisher-18   |        357 |   3 583 216 ns/op |    96 |         2 |
+| BenchmarkPublishChannelSizes/Small-18              |  6 551 547 |       185.2 ns/op |    96 |         2 |
+| BenchmarkPublishChannelSizes/Medium-18             |  6 627 157 |       181.5 ns/op |    96 |         2 |
+| BenchmarkPublishChannelSizes/Large-18              |  6 533 964 |       181.8 ns/op |    96 |         2 |
+| BenchmarkPublishWithTimeout-18                     |  1 809 643 |       660.2 ns/op |   504 |         7 |
+| BenchmarkHighLoadParallel-18                       |      9 979 |     115 895 ns/op |    97 |         2 |
+| BenchmarkSubscribes-18                             |     10 000 |     105 403 ns/op | 104822 |       974 |
+| BenchmarkBrokerTopics/10-18                        |  4 648 761 |       255.0 ns/op |   256 |         3 |
+| BenchmarkBrokerTopics/100-18                       |    823 272 |       1 373 ns/op |  1888 |         3 |
+| BenchmarkBrokerTopics/1000-18                      |     94 299 |      12 836 ns/op | 16480 |         3 |
+| BenchmarkStructPayload-18                          |  6 343 249 |       187.3 ns/op |    96 |         2 |
+| BenchmarkPublishAutoCreateTopic-18                 |  1 205 358 |       847.5 ns/op |   420 |         8 |
 
 ---
 

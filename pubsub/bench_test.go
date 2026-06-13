@@ -270,15 +270,34 @@ func BenchmarkHighLoadParallel(b *testing.B) {
 	b.ReportAllocs()
 
 	b.ResetTimer()
+
+	// 独立 drain goroutine 持续抽干 10000 个订阅者 channel,让 publish
+	// 路径不会因为 channel 满而大量丢消息;drain 速率远高于 publish 速率,
+	// 稳态下 buffer 几乎总是空的(满了立即被 drain 抽走),bench 测的是
+	// "10000 订阅者下,publish 路径"的吞吐。
+	drainDone := make(chan struct{})
+	go func() {
+		for {
+			for _, s := range subs {
+				select {
+				case <-s.Ch:
+				case <-drainDone:
+					return
+				}
+			}
+		}
+	}()
+
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			if err := publisher.Publish("highload_topic", 123); err != nil {
 				b.Error(err)
 			}
-			// 消费消息，避免堆积
-			<-subs[0].Ch
 		}
 	})
+
+	b.StopTimer()
+	close(drainDone)
 
 	b.StopTimer()
 	b.Logf("GOMAXPROCS=%d, Parallelism=%d, Subscribers=%d",

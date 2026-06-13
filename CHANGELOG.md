@@ -40,6 +40,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `ErrSubscriptionCapacityExceeded` message string now reads
   `"subscription capacity exceeded"` (was the leftover
   `"subscription capacity exceed"` from the rename).
+- `BenchmarkHighLoadParallel` deadlocked under the post-simplify
+  broker: the original `b.RunParallel` worker drained `<-subs[0].Ch`
+  synchronously, and the 100-buffer channel could not absorb the 180
+  concurrent publishes from `SetParallelism(10) × GOMAXPROCS=18`, so
+  the majority of workers blocked on receive forever. Redesigned with
+  a dedicated drain goroutine that keeps all 10 000 subscriber
+  channels empty while the parallel workers only `Publish`; the
+  bench no longer hangs and `ns/op` rises ~13% (the real end-to-end
+  cost, vs. the self-referential baseline that hid the contention).
 
 ### Added (profiling toolchain)
 - **Profiling & bench toolchain** (local-only). Seven new `make`
