@@ -94,8 +94,7 @@ benchstat: $(PROFILE_DIR) ## Diff bench against .profile/bench.base.txt
 	$(GO) test -bench=. -count=10 -run=^$$ ./pubsub/... \
 		> $(PROFILE_DIR)/bench.new.txt
 	@if [ -f $(PROFILE_DIR)/bench.base.txt ]; then \
-		$(GO) run tool benchstat \
-			$(PROFILE_DIR)/bench.base.txt $(PROFILE_DIR)/bench.new.txt; \
+		benchstat $(PROFILE_DIR)/bench.base.txt $(PROFILE_DIR)/bench.new.txt; \
 	else \
 		echo "no baseline at $(PROFILE_DIR)/bench.base.txt — saving current as baseline"; \
 		mv $(PROFILE_DIR)/bench.new.txt $(PROFILE_DIR)/bench.base.txt; \
