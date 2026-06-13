@@ -4,7 +4,7 @@ All notable changes to `go-pubsub` are documented in this file. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [v1.1.0] - 2026-06-13
 
 ### Changed
 - **Breaking**: rename `pubsub.SubscriptionCapacityExceed` →
@@ -248,5 +248,5 @@ gating them). `BenchmarkPublishSingleSubscriber` stays at ~108 ns/op,
 - README-cited benchmark suite (`bench_test.go`).
 - `cmd/quickstart` runnable example.
 
-[Unreleased]: https://github.com/F2077/go-pubsub/compare/v1.0.0...HEAD
+[v1.1.0]: https://github.com/F2077/go-pubsub/compare/v1.0.0...v1.1.0
 [v1.0.0]: https://github.com/F2077/go-pubsub/releases/tag/v1.0.0
