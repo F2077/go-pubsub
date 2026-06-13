@@ -128,6 +128,30 @@ Statement coverage: 95.7 % → 96.2 % (the new Debug-level test
 and the two new timer-lifecycle tests add a handful of fully
 exercised statements).
 
+### Changed (examples)
+- `cmd/quickstart` rewritten from a 47-line single-subscription demo
+  into a 13-phase ~260-line end-to-end walkthrough. The new program
+  covers the full public surface in a single `go run`: two brokers
+  (one production-shaped with `WithId`+`WithLogger`+`WithCapacity`,
+  one tiny `cap=2` broker for the capacity-exceeded demo), the
+  `BrokerOption` validation error path (`ErrLoggerNil` /
+  `ErrBrokerIdEmpty`), three publishers and two subscribers,
+  `Subscriber.Subscribes` (multi-topic) and `Subscriber.Subscribe`
+  (single-topic, `Block` buffer + 400 ms sliding timeout), every
+  exported `ChannelSize` constant's buffer-capacity contract, the
+  lazy-`ErrCh` contract (nil for no-timeout subs), `OnClose` × 4
+  (one per subscription, all fired), the natural firing of
+  `ErrSubscriptionTimeout` on the drainer, `Subscriber.Close`
+  idempotency + `ErrSubscriberClosed` on the second call and on
+  post-close `Subscribe`, `ErrSubscriptionCapacityExceeded` via
+  `errors.Is`, and a final `Broker.Topics()` snapshot that may
+  briefly show non-empty topics after `subscriber.Close()` due to
+  the documented asynchronous reaping. A generic
+  `drainSubscription[T]` helper keeps the per-subscription consume
+  logic in one place; `main` is a thin error wrapper around `run()`.
+  No library-code changes; the existing unit tests in `pubsub/`
+  remain the contract.
+
 ### Changed (test-side cleanup)
 - Test files now share a single `testLogger()` / `benchLogger()` pair
   in `pubsub/helpers_test.go`; ~19 inline `slog.New(...)` duplicates

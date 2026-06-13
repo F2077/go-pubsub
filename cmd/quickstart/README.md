@@ -1,8 +1,9 @@
 # cmd/quickstart
 
-A runnable, end-to-end example of `go-pubsub`. One `main` function that
-wires up a broker, a publisher, and a subscriber on the same process
-and delivers a single message through the pipeline.
+A runnable, end-to-end walk-through of the entire `go-pubsub` public
+surface. The program is structured as 13 numbered phases: each phase
+exercises one or more exported APIs, prints a header, and then continues
+to the next. The whole script runs in well under a second.
 
 ## Run it
 
@@ -14,27 +15,31 @@ go run ./cmd/quickstart
 go run github.com/F2077/go-pubsub/cmd/quickstart@latest
 ```
 
-Expected output (one line):
-
-```
-Received: CPU over 90%!
-```
-
-If the subscriber's idle timer elapses before the publisher's goroutine
-schedules, you'll see `Error: subscription timeout` instead — that's
-the `WithTimeout(5*time.Second)` sliding-deadline working as designed.
+A successful run prints a transcript that starts with `=== 1. Brokers ===`
+and ends with `quickstart: ok`. The full output is ~30 lines and fits in a
+terminal scrollback.
 
 ## What it shows
 
-| Step | API surface exercised |
+| Phase | APIs exercised |
 | ---: | --- |
-| 1 | `pubsub.NewBroker[string]()` — generic broker constructor |
-| 2 | `pubsub.NewPublisher[string]` / `pubsub.NewSubscriber[string]` |
-| 3 | `pubsub.WithChannelSize[string](pubsub.Medium)` |
-| 3 | `pubsub.WithTimeout[string](5*time.Second)` |
-| 4 | `sub.Ch` (read-only message channel) |
-| 4 | `sub.ErrCh` (read-only error channel) |
-| 5 | `defer sub.Close()` — release the subscription |
+| 1 | `pubsub.NewBroker[T]`, `Broker.String`, `Broker.Capacity`, `pubsub.DefaultCapacity` |
+| 2 | `pubsub.WithLogger`, `pubsub.WithId`, `pubsub.ErrLoggerNil`, `pubsub.ErrBrokerIdEmpty`, `errors.Is` |
+| 3 | `pubsub.NewPublisher[T]`, `pubsub.NewSubscriber[T]`, `Publisher.String`, `Publisher.Id`, `Subscriber.String`, `Subscriber.Id` |
+| 4 | `Subscriber.Subscribes`, `Subscription.Ch` (capacity), `Subscription.ErrCh` (lazy-nil contract), `Subscription.OnClose` |
+| 5 | `Subscriber.Subscribe`, `pubsub.WithChannelSize(pubsub.Block)`, `pubsub.WithTimeout`, `pubsub.DefaultTimeout` (implicit), `cap` on receive-only channel |
+| 6 | (helper plumbing — drain goroutines) |
+| 7 | `Publisher.Publish` × 15 across 3 topics / 2 publishers |
+| 8 | `pubsub.WithCapacity(2)`, `pubsub.ErrSubscriptionCapacityExceeded`, `errors.Is` |
+| 9 | `pubsub.ErrSubscriptionTimeout` (the sliding 400 ms timer fires naturally) |
+| 10 | `Subscription.Close` (fires `OnClose`), `Subscriber.Close` (idempotent + `ErrSubscriberClosed`), `Subscriber.Subscribe` after `Close` returns `ErrSubscriberClosed` |
+| 11 | Per-subscription `sub.Close()` × 3 (each fires its own `OnClose`) |
+| 12 | (joins the 4 drain goroutines) |
+| 13 | `Broker.Topics` — may show a non-empty snapshot briefly after Close due to asynchronous topic reaping |
+
+The script's `main` package keeps the orchestration in `run()` and the
+drain logic in a generic `drainSubscription[T]` helper. `main` itself is
+a thin error wrapper that prints failures to stderr and exits non-zero.
 
 ## Layout rationale
 
@@ -47,20 +52,35 @@ the `WithTimeout(5*time.Second)` sliding-deadline working as designed.
 > that imports and invokes the code from the `/internal` and `/pkg`
 > directories and nothing else.
 
-The example deliberately keeps the `main` package under 50 lines so
-the API surface stays the focus — there is no goroutine pool, no
-graceful-shutdown handler, and no signal trapping, because those are
-application concerns, not library concerns.
+The example uses ~260 lines of source so that the runnable program can
+demonstrate every exported symbol in one go (constructors, options,
+constants, sentinels, methods, fields, callbacks). All of the API
+surface that is *not* observable from a single-process script — the
+genuinely cross-process pieces — is intentionally left out, and
+`go-pubsub` is an in-process library, so this covers the whole product.
 
 ## What it does NOT show
 
-- **Publisher→Broker errors.** `Publish` can return
-  `pubsub.ErrSubscriptionCapacityExceeded` if the broker is at capacity.
-  In this example we ignore the error (`_ = publisher.Publish(...)`)
-  for brevity; production code should check it.
-- **Subscriber close.** `defer sub.Close()` is the only cleanup. A
-  long-running program would also call `subscriber.Close()` to release
-  every topic the subscriber is on, not just one.
-- **Channel size = 0 (`Block`)** mode. The quickstart uses `Medium` to
-  stay drop-tolerant; switch to `pubsub.Block` if you want publish to
-  block until the consumer reads.
+- **Backpressure / guaranteed delivery.** The library is fire-and-forget
+  by design: `Publish` is non-blocking, full channels drop messages,
+  and there is no acknowledgement path. The quickstart only uses
+  `Block` once (in phase 5) for the sliding-timeout demo; everywhere
+  else it uses the drop-tolerant `Medium` buffer.
+- **Signal handling / graceful shutdown.** A long-running program
+  would also trap `SIGINT`/`SIGTERM` and call `subscriber.Close()` on
+  exit. The quickstart exits immediately after `run()` returns, so
+  there is nothing to trap.
+- **Subscriber error paths beyond the sentinels.** `subscriber.Close()`
+  on a multi-topic subscriber is exercised in phases 10–11; the
+  per-subscription `sub.Close()` after the subscriber itself has been
+  closed is also exercised. Other close-order edge cases (e.g. closing
+  the same sub twice) are covered by the unit tests in `pubsub/`.
+
+## Why the broker's `Topics()` snapshot may be non-empty at exit
+
+Phases 10–11 close every subscription, but the broker reaps empty
+topics in a separate goroutine to avoid a `subscription → broker`
+lock-order deadlock (see `pubsub/broker.go:201-207`). A freshly-emptied
+topic may therefore still appear in the `Topics()` snapshot for a
+short window after `subscriber.Close()` returns. This is intentional,
+documented behaviour, not a leak.
