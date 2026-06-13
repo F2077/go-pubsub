@@ -496,3 +496,53 @@ func TestResetTimerDrainsFiredTimer(t *testing.T) {
 	close(done)
 	wg.Wait()
 }
+
+// TestHandleTimeoutDoesNotDeadlockWhenConsumerIsNotDraining 验证：errCh 是
+// cap=1 的缓冲通道，如果调用方不读、timer 又反复 fire，handleTimeout 的
+// 阻塞 send 会把整个 subscriber 锁住（因为它持着 s.mutex）。修复后用
+// non-blocking send 直接 drop，subscriber 仍然可被其他路径访问。
+//
+// 复现路径：
+//  1. Subscribe("t", WithTimeout(50ms)) — 起一个 fire goroutine
+//  2. 故意不读 ErrCh，让 errCh 在第一次 fire 后被填满
+//  3. Publish 一次（触发 resetTimer 重置 timer）
+//  4. 等到第二次 fire，pre-fix 路径下 send 会卡死 + 整个 mutex 卡死；
+//     post-fix 路径下 send 走 default，subscriber.Close() 立刻返回。
+func TestHandleTimeoutDoesNotDeadlockWhenConsumerIsNotDraining(t *testing.T) {
+	broker, _ := NewBroker[string]()
+	sub := NewSubscriber[string](broker)
+	pub := NewPublisher[string](broker)
+
+	s, err := sub.Subscribe("t", WithTimeout[string](50*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s // 不读 ErrCh、不主动 Close——让 Close 由后面 goroutine 来收
+	// 故意不 drain ErrCh；这里想证 "调用方忘了读" 不会卡死系统。
+
+	// 等到第一次 fire 填满 errCh。
+	time.Sleep(80 * time.Millisecond)
+
+	// Publish 一次触发 resetTimer，重新武装 50ms 后的第二次 fire。
+	if err := pub.Publish("t", "x"); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+
+	// 再等 80ms 让第二次 fire 发生——pre-fix 这次 send 会卡在 s.mutex 上。
+	time.Sleep(80 * time.Millisecond)
+
+	// 用 timeout 包裹 subscriber.Close()。如果 handleTimeout 把 s.mutex
+	// 锁死了，Close 会等不到锁；2s 超时即视为死锁。
+	closed := make(chan error, 1)
+	go func() {
+		closed <- sub.Close()
+	}()
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatalf("subscriber.Close returned %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("subscriber.Close deadlocked — handleTimeout held s.mutex on full errCh")
+	}
+}

@@ -308,8 +308,15 @@ func (s *Subscriber[T]) handleTimeout(topic string, errCh chan<- error) {
 		return
 	}
 
-	// 发送超时错误
-	errCh <- ErrSubscriptionTimeout
+	// 用 non-blocking send：errCh 是 cap=1 的缓冲通道，如果调用方没在
+	// 读而 timer 又多次 fire，阻塞 send 会把本 goroutine 卡在 s.mutex
+	// 上，进而把后面任何想拿锁的 goroutine（deliver → resetTimer 也走
+	// 这条路）一起拖死。直接 drop 这次 timeout 信号，调用方依然可以从
+	// Ch 关闭 / OnClose 收到订阅结束的信号。
+	select {
+	case errCh <- ErrSubscriptionTimeout:
+	default:
+	}
 }
 
 // Subscription is the read-only handle returned by Subscribe. Ch receives
