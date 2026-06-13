@@ -45,7 +45,16 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.61
+          # v1.61.0 ships with Go 1.23 and refuses to lint modules whose
+          # `go` directive is > 1.23 ("Go language version (go1.23) used
+          # to build golangci-lint is lower than the targeted Go version
+          # (1.25.0)"). v2.x is built with Go 1.24+, so it can parse our
+          # go 1.25 module. v2 still accepts the v1-style config we have
+          # (no `version: "2"` line, `linters.enable` + `exclusions.rules`
+          # block); it just runs in compat mode and emits a deprecation
+          # warning. Bump this again whenever our `go` directive moves
+          # past the version used to build the pin.
+          version: v2.12.2
           only-new-issues: true
 
       - name: Upload coverage artifact
