@@ -60,6 +60,7 @@ bench: ## Run the README-cited benchmarks
 
 PROFILE_DIR   ?= .profile
 PROFILE_BENCH ?= BenchmarkPublishSingleSubscriber   # override on CLI
+BENCH_COUNT   ?= 10                                  # iterations for benchstat
 
 $(PROFILE_DIR):
 	@mkdir -p $@
@@ -91,7 +92,7 @@ flamegraph: ## Open CPU flame graph in browser (pprof -http=:8080)
 	$(GO) tool pprof -http=:8080 $(PROFILE_DIR)/cpu.prof
 
 benchstat: $(PROFILE_DIR) ## Diff bench against .profile/bench.base.txt
-	$(GO) test -bench=. -count=10 -run=^$$ ./pubsub/... \
+	$(GO) test -bench=. -count=$(BENCH_COUNT) -run=^$$ ./pubsub/... \
 		> $(PROFILE_DIR)/bench.new.txt
 	@if [ -f $(PROFILE_DIR)/bench.base.txt ]; then \
 		$(GO) tool benchstat $(PROFILE_DIR)/bench.base.txt $(PROFILE_DIR)/bench.new.txt; \
