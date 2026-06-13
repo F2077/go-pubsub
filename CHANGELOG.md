@@ -62,6 +62,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `.github/workflows/test.yml` / `CLAUDE.md`. Required for the
   `tool` directive; no public API impact.
 
+### Changed (hot-path alloc reductions)
+Three independent commits knock out the allocs that were on every
+publish. None of them change the public API; one changes a
+documented contract on `Subscription.ErrCh` (see "API contract"
+below).
+
+- **Gated `slog.Debug` behind `Enabled()`** (`pubsub/broker.go`,
+  `pubsub/subscriber.go`). Hot-path `logger.Debug(..., slog.Any(...))`
+  calls — five in `createOrLoadSubscription`, two in `deliver` — now
+  skip the variadic `[]any` slice when the level is disabled.
+  `slog.Logger.Debug` always evaluates its variadic args at the call
+  site, so even at `LevelError` the allocation happened. New test
+  `TestDebugLevelLoggerExercisesHotPath` drives a Debug-level
+  logger to keep the gated if-bodies honest.
+- **Persistent `*time.Timer` + `Reset()`** for sliding timeouts
+  (`pubsub/subscriber.go`). The previous design called
+  `time.AfterFunc(timeout, closure)` once per topic in `Subscribe`
+  and re-created it on every successful publish via `resetTimer`
+  — a new `*runtime.timer` and a fresh closure per message, plus
+  the closure's per-publish alloc. Replaced with one persistent
+  `time.NewTimer(timeout)` per topic plus a single fire goroutine
+  (`runTopicTimer`) that reads `t.C` and calls `handleTimeout`.
+  `resetTimer` is now a `Stop+stop-drain+Reset` triple with zero
+  allocation. The `Subscriber` struct picks up a new
+  `timerDones map[string]chan struct{}` field for the fire
+  goroutine's exit signal. New tests
+  `TestReSubscribeSameTopicCleansUpOldTimer` and
+  `TestResetTimerDrainsFiredTimer` (the latter is a synthetic test
+  for the canonical `t.Stop+stop-drain+t.Reset` pattern, which is
+  required for correctness — without the drain, a fire that races
+  with a publish would deliver a spurious `ErrSubscriptionTimeout`).
+- **Lazy `ErrCh`** (`pubsub/subscriber.go`). `Subscribe` no longer
+  allocates a 1-slot error channel for topics that did not pass
+  `WithTimeout`. Those subscriptions now have `ErrCh == nil`; a
+  receive on a nil channel blocks forever, which is the correct
+  "never errors" semantics for a subscription that cannot time
+  out. `unsubscribe` already short-circuits when there is no
+  `s.errChannels` entry to delete, so the Close path is unchanged.
+
+#### API contract
+`Subscription.ErrCh` is now documented as **nil** when `Subscribe`
+was called without `WithTimeout`. Code that today does
+`select { case err := <-sub.ErrCh: ... }` continues to compile and
+behave correctly — the receive simply blocks forever. Callers that
+want to distinguish "no timeout configured" from "timeout = ∞" can
+compare `sub.ErrCh == nil` themselves. No `nil`-deref risk: `ErrCh`
+is a receive-only field, so callers cannot accidentally `send` on it.
+
+#### Bench deltas (baseline → this PR, `go test -bench=. -benchmem -benchtime=1s`)
+
+| Benchmark                                          | Before         | After         | Δ allocs | Δ B/op |
+|----------------------------------------------------|----------------|---------------|----------|--------|
+| `PublishSingleSubscriber-18`                       | 179.6 ns/96 B/2 | 122.4 ns/0 B/0 | -2       | -96    |
+| `MultipleSubscribers-18`                           | 6 576 ns/96 B/2 | 6 172 ns/0 B/0 | -2       | -96    |
+| `MultiPublisherSingleSubscriber-18`                | 8 243 ns/784 B/22 | 2 833 ns/304 B/12 | -10  | -480   |
+| `MultiPublisherMultipleSubscribers-18`             | 20 173 ns/784 B/22 | 16 982 ns/304 B/12 | -10 | -480 |
+| `PublishWithTimeout-18`                            | 660.2 ns/504 B/7 | 477.5 ns/248 B/3 | -4   | -256   |
+| `PublishAutoCreateTopic-18`                        | 847.5 ns/420 B/8 | 697.5 ns/208 B/4 | -4   | -212   |
+| `Subscribes-18` (50 topics)                        | 105 403 ns/104 822 B/974 | 105 561 ns/82 315 B/562 | -412 | -22 507 |
+| `HighLoadParallel-18` (10 000 sub, parallel)       | 115 895 ns/97 B/2  | 118 695 ns/3 B/0  | -2  | -94    |
+| `BrokerTopics/*`                                   | unchanged           | unchanged         | 0   | 0      |
+
+Statement coverage: 95.7 % → 96.2 % (the new Debug-level test
+and the two new timer-lifecycle tests add a handful of fully
+exercised statements).
+
 ### Changed (test-side cleanup)
 - Test files now share a single `testLogger()` / `benchLogger()` pair
   in `pubsub/helpers_test.go`; ~19 inline `slog.New(...)` duplicates
