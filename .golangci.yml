@@ -10,12 +10,19 @@
 # To run locally: `make lint` (or `golangci-lint run ./...` directly).
 # To install: https://golangci-lint.run/welcome/install/
 
+# v2 schema. CI pins golangci-lint v2.12.2 (see .github/workflows/test.yml
+# comment for why), which rejects v1-style configs ("unsupported version
+# of the configuration"). v2 also replaces the v1 `linters.disable-all`
+# flag with `linters.default: none`; we set both for explicitness, but
+# `default: none` alone is enough.
+version: "2"
+
 run:
   timeout: 5m
   tests: true
 
 linters:
-  disable-all: true
+  default: none
   enable:
     - govet          # go vet, including shadow + copylocks
     - ineffassign    # unused assignments
