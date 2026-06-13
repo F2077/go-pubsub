@@ -1,0 +1,67 @@
+# golangci-lint configuration for go-pubsub.
+#
+# This file is intentionally short: go-pubsub is a small library and the
+# goal is to catch genuine bugs and API drift, not to bikeshed style.
+# `govet`, `ineffassign`, and `unused` are the conservative defaults;
+# revive replaces the deprecated golint and adds community-standard rules
+# (exported doc comments, error-strings, etc.); staticcheck is the
+# long-time industry standard for Go static analysis.
+#
+# To run locally: `make lint` (or `golangci-lint run ./...` directly).
+# To install: https://golangci-lint.run/welcome/install/
+
+# v2 schema. CI pins golangci-lint v2.12.2 (see .github/workflows/test.yml
+# comment for why), which rejects v1-style configs ("unsupported version
+# of the configuration"). v2 also replaces the v1 `linters.disable-all`
+# flag with `linters.default: none`; we set both for explicitness, but
+# `default: none` alone is enough.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - govet          # go vet, including shadow + copylocks
+    - ineffassign    # unused assignments
+    - unused         # unused identifiers (parameters, variables, types)
+    - revive         # successor to golint; enforces exported doc comments
+    - staticcheck    # SA-prefix rules: S1000, S1019, S1024, etc.
+
+  # Project-specific exclusions. CLAUDE.md records the explicit-type-args
+  # style and the bench-loop style as out-of-scope for unrelated work;
+  # the three rules below either conflict with that policy or are
+  # opinionated style checks that fire on the kind of code we already
+  # have on purpose.
+  exclusions:
+    rules:
+      # CLAUDE.md: maintainer prefers explicit type parameters in generic
+      # option calls (NewBroker[string](), WithChannelSize[string](...))
+      # even when the compiler could infer T. staticcheck's S1000 is the
+      # original "unnecessary type arguments" rule, and CLAUDE.md calls
+      # this out as a known inference footgun.
+      - linters:
+          - staticcheck
+        text: "unnecessary type arguments"
+      # Go stdlib consistently uses lowercase `Id`/`Ids` for the
+      # identifier name (e.g. net/url.User.Id, os/exec.Cmd.ProcessId
+      # — historically `pid`). revive's `var-naming` rule defaults to
+      # the all-caps `ID` initialism and would force a rename that
+      # conflicts with the rest of the public API surface
+      # (`Subscriber.Id`, `Broker.Id`, `WithId`). Excluding the
+      # initialism check, not the whole rule, keeps the rest of
+      # revive's var-naming checks (e.g. error-suffix) live.
+      - linters:
+          - revive
+        text: "var-naming"
+      # ST1005 wants error strings to start lowercase because they
+      # usually appear mid-sentence. Our `cmd/quickstart` "Publish
+      # t1 should succeed: %w" messages are internal sentinel-style
+      # diagnostics from a runnable example — they never reach a
+      # user-facing surface; the %w chain surfaces the underlying
+      # `err.Error()` instead. Keep the readable sentence case here.
+      - linters:
+          - staticcheck
+        text: "ST1005"

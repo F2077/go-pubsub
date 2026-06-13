@@ -1,0 +1,18 @@
+# Force LF for every text file Git detects; `text=auto` leaves true
+# binaries alone, and `eol=lf` keeps CRLF from leaking in even on
+# Windows checkouts with `core.autocrlf=true`.
+* text=auto eol=lf
+
+# Explicit binary overrides — `text=auto` can misclassify some formats
+# (or get overridden by filename rules), so be defensive about the
+# formats that ship with this repo today.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+
+# Mark profiling artifacts as generated (not project code).
+.profile/** linguist-generated
+

@@ -1,0 +1,2 @@
+- [Bench target is slow; use -benchtime=200ms for a quick pass](bench-target-slow.md) — `make bench` is dominated by 10k-sub benches and was killed by harness timeout
+- [No doc.go in this repo](doc-convention.md) — package doc lives in `pubsub/pubsub.go` per 1:1 source-file convention
