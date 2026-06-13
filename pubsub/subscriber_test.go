@@ -92,7 +92,10 @@ func TestSubscriberCloseUnsubscribesAll(t *testing.T) {
 }
 
 // TestUnsubscribe verifies that closing a subscription before publishing
-// drops the message: the channel is closed, not silently filled.
+// drops the message: the channel is closed, not silently filled. Passes
+// WithTimeout so sub.ErrCh is a real channel — without it, the lazy-ErrCh
+// contract leaves ErrCh == nil and the second select below would never
+// fire (vacuously "passing").
 func TestUnsubscribe(t *testing.T) {
 	broker, err := NewBroker[string](WithLogger[string](testLogger()))
 	if err != nil {
@@ -101,7 +104,7 @@ func TestUnsubscribe(t *testing.T) {
 	publisher := NewPublisher(broker)
 	subscriber := NewSubscriber[string](broker)
 
-	sub, err := subscriber.Subscribe("topic_unsub")
+	sub, err := subscriber.Subscribe("topic_unsub", WithTimeout[string](1*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,6 +137,7 @@ func TestUnsubscribe(t *testing.T) {
 			t.Fatal("expected error channel to be closed after unsubscribe")
 		}
 	default:
+		t.Fatal("expected error channel to be closed after unsubscribe (default branch)")
 	}
 }
 
