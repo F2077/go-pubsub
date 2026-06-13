@@ -1,6 +1,7 @@
 package pubsub
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -109,10 +110,14 @@ func (s *Subscriber[T]) Subscribe(topic string, opts ...SubscriptionOption[T]) (
 	}
 
 	s.mutex.Lock()
-	s.broker.logger.Debug("Subscriber.Subscribe acquired lock", slog.Any("subscriber", s))
+	if s.broker.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		s.broker.logger.Debug("Subscriber.Subscribe acquired lock", slog.Any("subscriber", s))
+	}
 	defer func() {
 		s.mutex.Unlock()
-		s.broker.logger.Debug("Subscriber.Subscribe released lock", slog.Any("subscriber", s))
+		if s.broker.logger.Enabled(context.TODO(), slog.LevelDebug) {
+			s.broker.logger.Debug("Subscriber.Subscribe released lock", slog.Any("subscriber", s))
+		}
 	}()
 
 	if s.closed {
@@ -231,10 +236,14 @@ func (s *Subscriber[T]) Close() error {
 
 func (s *Subscriber[T]) unsubscribe(sub *Subscription[T]) error {
 	s.mutex.Lock()
-	s.broker.logger.Debug("Subscriber.unsubscribe acquired lock", slog.Any("subscriber", s))
+	if s.broker.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		s.broker.logger.Debug("Subscriber.unsubscribe acquired lock", slog.Any("subscriber", s))
+	}
 	defer func() {
 		s.mutex.Unlock()
-		s.broker.logger.Debug("Subscriber.unsubscribe released lock", slog.Any("subscriber", s))
+		if s.broker.logger.Enabled(context.TODO(), slog.LevelDebug) {
+			s.broker.logger.Debug("Subscriber.unsubscribe released lock", slog.Any("subscriber", s))
+		}
 	}()
 
 	if s.closed {
