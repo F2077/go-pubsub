@@ -299,7 +299,6 @@ func BenchmarkHighLoadParallel(b *testing.B) {
 	b.StopTimer()
 	close(drainDone)
 
-	b.StopTimer()
 	b.Logf("GOMAXPROCS=%d, Parallelism=%d, Subscribers=%d",
 		procs, procs*parallelFactor, len(subs))
 }

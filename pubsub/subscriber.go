@@ -176,10 +176,12 @@ func (s *Subscriber[T]) Subscribe(topic string, opts ...SubscriptionOption[T]) (
 		}
 
 		// 创建常驻 timer + 专用的 fire goroutine
-		s.broker.logger.Debug("subscription timeout configured",
-			slog.Any("topic", topic),
-			slog.Any("timeout", options.timeout),
-		)
+		if s.broker.logger.Enabled(context.TODO(), slog.LevelDebug) {
+			s.broker.logger.Debug("subscription timeout configured",
+				slog.Any("topic", topic),
+				slog.Any("timeout", options.timeout),
+			)
+		}
 		s.timers[topic] = &topicTimer{
 			t:       time.NewTimer(options.timeout),
 			timeout: options.timeout,
@@ -243,11 +245,10 @@ func (s *Subscriber[T]) unsubscribe(sub *Subscription[T]) error {
 		}
 	}()
 
-	if s.closed {
-		return ErrSubscriberClosed
-	}
-
-	// 幂等：第二次 Close 同一 sub 时，s.subs 里已经没了，直接返回。
+	// 幂等：这是本 unsubscribe 的唯一短路径。
+	// - Subscriber.Close() 在循环结束之后才置 s.closed=true，所以循环期间
+	//   s.closed 必为 false；
+	// - 重复 Close 同一 sub 时，s.subs 里已经被前一次 unsubscribe 删掉了。
 	// 老设计靠 s.errChannels.LoadAndDelete 的 ok==false 自然幂等；
 	// 现在 errCh 挂在 sub 上，重复 close 会 panic，所以这里 short-circuit。
 	if _, ok := s.subs[sub]; !ok {
@@ -294,9 +295,11 @@ func (s *Subscriber[T]) unsubscribe(sub *Subscription[T]) error {
 }
 
 // runTopicTimer 在独立 goroutine 里循环读 t.C，每次 fire 调 handleTimeout。
-// 收到 done 信号就停掉 timer，并通过 exit 通知 unsubscribe 自己已经退出。
+// 收到 done 信号就退出，并通过 exit 通知 unsubscribe 自己已经退出。
 // unsubscribe 会 <-exit 等这个信号，确保没人还在写 errCh，再 close(errCh)。
 // 该 goroutine 的生命周期 == 该 topic 的订阅生命周期。
+// 注意：<--done 之后不需要 tt.t.Stop()，因为 t.C 已无消费者、*topicTimer
+// 在 unsubscribe 删掉 s.timers[topic] 之后整体不可达，会被 GC 回收。
 func (s *Subscriber[T]) runTopicTimer(topic string, tt *topicTimer, errCh chan error) {
 	defer close(tt.exit)
 	for {
@@ -304,7 +307,6 @@ func (s *Subscriber[T]) runTopicTimer(topic string, tt *topicTimer, errCh chan e
 		case <-tt.t.C:
 			s.handleTimeout(topic, errCh)
 		case <-tt.done:
-			tt.t.Stop()
 			return
 		}
 	}
@@ -326,7 +328,9 @@ func (s *Subscriber[T]) handleTimeout(topic string, errCh chan<- error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	s.broker.logger.Debug("subscription timeout fired", slog.Any("topic", topic))
+	if s.broker.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		s.broker.logger.Debug("subscription timeout fired", slog.Any("topic", topic))
+	}
 	// 检查是否仍订阅该主题
 	if _, ok := s.topics[topic]; !ok {
 		return
