@@ -49,6 +49,17 @@ var (
 //
 // The zero value is not usable; construct with NewSubscriber.
 //
+// topicTimer 是一条订阅的滑动超时相关状态的封装：常驻 *time.Timer、
+// 该 topic 的 timeout 长度、fire goroutine 的退出信号、用于停掉 fire
+// goroutine 的 done 通道。原本 4 个 map 按 topic 平铺，Subscribe /
+// unsubscribe 各要查 4 次；合成 1 个 struct 之后只查 1 次。
+type topicTimer struct {
+	t       *time.Timer
+	timeout time.Duration
+	done    chan struct{} // 关闭此通道让 fire goroutine 从 select 醒来
+	exit    chan struct{} // fire goroutine 退出时 close，unsubscribe 等它
+}
+
 // Subscriber is safe for concurrent use by multiple goroutines.
 type Subscriber[T any] struct {
 	mutex sync.Mutex
@@ -60,24 +71,18 @@ type Subscriber[T any] struct {
 	channels sync.Map
 	closed   bool
 
-	timers     map[string]*time.Timer
-	timeouts   map[string]time.Duration
-	timerDones map[string]chan struct{}
-	timerExits map[string]chan struct{} // 配套 fire goroutine 的退出信号；unsubscribe 收齐再关 errCh
+	timers map[string]*topicTimer
 }
 
 // NewSubscriber creates a Subscriber bound to the given broker, with its
 // own UUID and an empty topic set. Use Subscribe to attach to topics.
 func NewSubscriber[T any](broker *Broker[T]) *Subscriber[T] {
 	return &Subscriber[T]{
-		id:         uuid.New().String(),
-		broker:     broker,
-		topics:     map[string]struct{}{},
-		subs:       map[*Subscription[T]]struct{}{},
-		timers:     make(map[string]*time.Timer),
-		timeouts:   make(map[string]time.Duration),
-		timerDones: make(map[string]chan struct{}),
-		timerExits: make(map[string]chan struct{}),
+		id:      uuid.New().String(),
+		broker:  broker,
+		topics:  map[string]struct{}{},
+		subs:    map[*Subscription[T]]struct{}{},
+		timers:  make(map[string]*topicTimer),
 	}
 }
 
@@ -161,36 +166,28 @@ func (s *Subscriber[T]) Subscribe(topic string, opts ...SubscriptionOption[T]) (
 	// 设置超时逻辑（仅当 timeout > 0 时）
 	if options.timeout > 0 {
 		// 停掉旧的 timer + 旧 fire goroutine（re-Subscribe 同 topic 的情况）。
-		// close(oldDone) 让旧 fire goroutine 退出；close(oldExit) 由旧 fire
-		// goroutine 自己负责；我们只 delete 自己这边的 map entry。后续的
-		// unsubscribe 阶段会 <-oldExit 确认旧 fire goroutine 已经彻底退出。
-		if oldDone, ok := s.timerDones[topic]; ok {
-			close(oldDone)
-			delete(s.timerDones, topic)
-		}
-		if oldExit, ok := s.timerExits[topic]; ok {
-			delete(s.timerExits, topic)
-			_ = oldExit // 实际由 unsubscribe 阶段读
-		}
-		if oldTimer, ok := s.timers[topic]; ok {
-			oldTimer.Stop()
+		// close(tt.done) 让旧 fire goroutine 从 select 醒来并退出。<-tt.exit
+		// 等它真的退完，避免后续 unsubscribe 阶段在它还活着时关 errCh。
+		if oldTT, ok := s.timers[topic]; ok {
+			close(oldTT.done)
+			<-oldTT.exit
+			oldTT.t.Stop()
 			delete(s.timers, topic)
 		}
 
 		// 创建常驻 timer + 专用的 fire goroutine
-		s.timeouts[topic] = options.timeout
 		s.broker.logger.Debug("subscription timeout configured",
 			slog.Any("topic", topic),
 			slog.Any("timeout", options.timeout),
 		)
-		t := time.NewTimer(options.timeout)
-		s.timers[topic] = t
-
-		done := make(chan struct{})
-		exit := make(chan struct{})
-		s.timerDones[topic] = done
-		s.timerExits[topic] = exit
-		go s.runTopicTimer(topic, t, ret.errCh, done, exit)
+		s.timers[topic] = &topicTimer{
+			t:       time.NewTimer(options.timeout),
+			timeout: options.timeout,
+			done:    make(chan struct{}),
+			exit:    make(chan struct{}),
+		}
+		tt := s.timers[topic]
+		go s.runTopicTimer(topic, tt, ret.errCh)
 	}
 
 	return ret, nil
@@ -278,29 +275,19 @@ func (s *Subscriber[T]) unsubscribe(sub *Subscription[T]) error {
 		close(ch.(chan T))
 	}
 
-	// 先停掉 fire goroutine：close(done) 让它从 select 醒来。<-exit 确保
-	// 它已经回到外层、不会再调 handleTimeout / 写 errCh——然后才能安全
-	// 关闭本 sub 自己的 errCh（向已关闭的 channel 写入会 panic）。
-	if done, ok := s.timerDones[topic]; ok {
-		close(done)
-		delete(s.timerDones, topic)
-	}
-	if exit, ok := s.timerExits[topic]; ok {
-		delete(s.timerExits, topic)
-		<-exit
+	// 先停掉 fire goroutine：close(tt.done) 让它从 select 醒来。<-tt.exit
+	// 确保它已经回到外层、不会再调 handleTimeout / 写 errCh——然后才能
+	// 安全关闭本 sub 自己的 errCh（向已关闭的 channel 写入会 panic）。
+	if tt, ok := s.timers[topic]; ok {
+		close(tt.done)
+		<-tt.exit
+		delete(s.timers, topic)
 	}
 
 	// 关闭本 sub 自己的 errCh（cap 1，给 timeout 用的）。
 	// 此时 fire goroutine 已退出，无人在写。
 	if sub.errCh != nil {
 		close(sub.errCh)
-	}
-
-	// 停止并删除定时器
-	if t, ok := s.timers[topic]; ok {
-		t.Stop()
-		delete(s.timers, topic)
-		delete(s.timeouts, topic)
 	}
 
 	return nil
@@ -310,14 +297,14 @@ func (s *Subscriber[T]) unsubscribe(sub *Subscription[T]) error {
 // 收到 done 信号就停掉 timer，并通过 exit 通知 unsubscribe 自己已经退出。
 // unsubscribe 会 <-exit 等这个信号，确保没人还在写 errCh，再 close(errCh)。
 // 该 goroutine 的生命周期 == 该 topic 的订阅生命周期。
-func (s *Subscriber[T]) runTopicTimer(topic string, t *time.Timer, errCh chan error, done <-chan struct{}, exit chan<- struct{}) {
-	defer close(exit)
+func (s *Subscriber[T]) runTopicTimer(topic string, tt *topicTimer, errCh chan error) {
+	defer close(tt.exit)
 	for {
 		select {
-		case <-t.C:
+		case <-tt.t.C:
 			s.handleTimeout(topic, errCh)
-		case <-done:
-			t.Stop()
+		case <-tt.done:
+			tt.t.Stop()
 			return
 		}
 	}
@@ -330,10 +317,8 @@ func (s *Subscriber[T]) resetTimer(topic string) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	if timeout, ok := s.timeouts[topic]; ok && timeout > 0 {
-		if t, ok := s.timers[topic]; ok {
-			t.Reset(timeout)
-		}
+	if tt, ok := s.timers[topic]; ok && tt.timeout > 0 {
+		tt.t.Reset(tt.timeout)
 	}
 }
 

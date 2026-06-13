@@ -435,13 +435,9 @@ func TestReSubscribeSameTopicCleansUpOldTimer(t *testing.T) {
 	// (the new one) — old timer entry should have been replaced.
 	sub.mutex.Lock()
 	timerCount := len(sub.timers)
-	doneCount := len(sub.timerDones)
 	sub.mutex.Unlock()
 	if timerCount != 1 {
 		t.Errorf("expected 1 timer entry after re-Subscribe, got %d", timerCount)
-	}
-	if doneCount != 1 {
-		t.Errorf("expected 1 timerDones entry after re-Subscribe, got %d", doneCount)
 	}
 }
 
@@ -465,20 +461,21 @@ func TestResetTimerRespectsGo123ResetSemantics(t *testing.T) {
 	t0 := time.NewTimer(5 * time.Millisecond)
 	time.Sleep(20 * time.Millisecond)
 
-	s.timers["x"] = t0
-	s.timeouts["x"] = 1 * time.Hour
+	tt := &topicTimer{
+		t:       t0,
+		timeout: 1 * time.Hour,
+		done:    make(chan struct{}),
+		exit:    make(chan struct{}),
+	}
+	s.timers["x"] = tt
 
 	errCh := make(chan error, 10)
-	done := make(chan struct{})
-	exit := make(chan struct{})
-	s.timerDones["x"] = done
-	s.timerExits["x"] = exit
 
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		s.runTopicTimer("x", t0, errCh, done, exit)
+		s.runTopicTimer("x", tt, errCh)
 	}()
 
 	s.resetTimer("x")
@@ -490,7 +487,7 @@ func TestResetTimerRespectsGo123ResetSemantics(t *testing.T) {
 	default:
 	}
 
-	close(done)
+	close(tt.done)
 	wg.Wait()
 }
 
