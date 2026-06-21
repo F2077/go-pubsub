@@ -58,10 +58,12 @@ pubsub/
   broker.go         # Broker[T], subscription[T], options, capacity mgmt
   publisher.go      # Publisher[T] (thin wrapper around broker.Publish)
   subscriber.go     # Subscriber[T], Subscription[T], SubscriptionOption
-  coverage_test.go  # unit tests for the public surface (gap-fillers)
-  example_test.go   # godoc Example* tests; show up on pkg.go.dev
-  pubsub_test.go    # unit tests
-  bench_test.go     # benchmarks cited in README
+  coverage_test.go   # unit tests for the public surface (gap-fillers)
+  concurrent_test.go # concurrency safety-net tests (run under -race)
+  example_test.go    # godoc Example* tests; show up on pkg.go.dev
+  perf_test.go       # zero-alloc assertions (//go:build !race)
+  pubsub_test.go     # unit tests
+  bench_test.go      # benchmarks cited in README
 cmd/
   quickstart/main.go  # runnable "Quick Start" example
 ```
@@ -74,13 +76,15 @@ Three generic types (`T` = message payload) form the public surface:
 
 - **`Broker[T]`** owns the topic→subscription map and the global capacity cap (default 8192 topics). It guards the map with `sync.RWMutex` and is the only place a new `subscription` is created or removed. All log output is emitted through an injected `*slog.Logger` (defaults to `slog.NewTextHandler(os.Stdout, nil)` — tests pass a stderr handler to keep bench/test output clean).
 - **`Publisher[T]`** is a UUID-keyed handle on a broker. `Publish(topic, msg)` resolves the topic's subscription via `createOrLoadSubscription` and calls `subscription.deliver`.
-- **`Subscriber[T]`** holds per-topic `chan T` and `chan error` in `sync.Map`s, plus a per-topic `*time.Timer` (created only when `WithTimeout` is set). `Subscribe` returns a `*Subscription[T]` exposing the read-only `Ch` and `ErrCh` channels and a `Close` method.
+- **`Subscriber[T]`** holds per-topic `chan T` in a `map[string]chan T` guarded by `subscriber.mutex`, plus a per-topic `*time.Timer` (created only when `WithTimeout` is set). The per-subscription `chan error` lives on each `*Subscription` (not shared, so one sub's `Close` can't close another's `ErrCh`). `Subscribe` returns a `*Subscription[T]` exposing the read-only `Ch` and `ErrCh` channels and a `Close` method.
 
-The internal `subscription[T]` is the fan-out unit: it tracks all `Subscriber`s for one topic and, on `deliver`, non-blockingly pushes to each subscriber's per-topic channel via `select { case ch<-msg: ... default: drop }`. A successful send also calls `subscriber.resetTimer` — that is the sliding timeout.
+The internal `subscription[T]` is the fan-out unit: it tracks all `Subscriber`s for one topic. On `deliver` it snapshots the subscriber set into a `sync.Pool`-recycled slice (zero allocation on the hot path — the pool stores `*[]*Subscriber[T]` so only a pointer boxes into `interface{}`), then for each subscriber it holds `subscriber.mutex` to read `channels[topic]` and non-blockingly `select`-send (`default: drop`). A successful send calls `subscriber.resetTimer` **outside** the lock — that is the sliding timeout.
 
 ### Locking pattern (important)
 
 `subscription.removeSubscriber` deliberately fires `broker.tryRemoveSubscription` in a **separate goroutine**. The comment in `broker.go` explains: holding `subscription` write → `broker` write while another path can do `broker` → `subscription` would deadlock, so the removal is decoupled. If you touch the locking order, preserve this pattern; re-check for deadlocks with `go test -race`.
+
+`deliver`'s fan-out holds `subscriber.mutex` while reading `channels[topic]` and sending. This serializes send against `unsubscribe`'s `close` of the same channel — the fix for a send-on-closed-channel race that used to panic the publisher goroutine (see Gotchas). `resetTimer` is called **outside** that lock because it too takes `subscriber.mutex`; calling it inside would re-enter and deadlock. The order is one-way: `deliver` releases `subscription.rwMutex` (snapshot) before taking `subscriber.mutex` (send), so there is no `subscription → subscriber` holding to conflict with `unsubscribe`'s `subscriber → broker → subscription` order.
 
 ### Capacity and lifecycle
 
@@ -131,3 +135,13 @@ From the README's own guidance — and worth restating so future changes don't a
   the topics that succeeded remain in the subscriber's set. Documented
   by `TestSubscribesPartialFailure`; if you change this, do it in its own
   commit and decide explicitly whether cleanup is the new contract.
+- **`deliver` sends and `unsubscribe` closes under the same `subscriber.mutex`.**
+  The fan-out reads `channels[topic]` and `select`-sends while holding
+  `subscriber.mutex`; `unsubscribe` deletes the entry and `close`s the
+  channel under the same lock. This mutual exclusion is what prevents a
+  send-on-closed-channel panic. An earlier version did a lock-free
+  `sync.Map.Load` + bare `select`-send, which raced `unsubscribe`'s close
+  and crashed the publisher goroutine — `TestConcurrentPublishWithDynamicSubscribe`
+  (4 publishers + 8 dynamic subscribe/close goroutines) is the regression
+  test. If you change the send or close path, keep them behind the same
+  lock and re-run that test under `-race`.

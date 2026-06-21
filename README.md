@@ -159,26 +159,32 @@ make profile-cpu # open the CPU flame graph (see PROFILING.md)
 
 ## Benchmark Results
 
-_All benchmarks run with_ `go test -bench=. -benchmem -run=^$ ./pubsub/...` _via_ `make bench`. _Numbers below are from the post-simplify pass on_ **goos: linux**, **goarch: amd64**, **pkg: github.com/F2077/go-pubsub**, **cpu: Intel(R) Core(TM) Ultra 5 125H**.
+_All benchmarks run with_ `go test -bench=. -benchmem -run=^$ ./pubsub/...` _via_ `make bench`. _Numbers below are the median of 3 runs on_ **goos: linux**, **goarch: amd64**, **pkg: github.com/F2077/go-pubsub**, **cpu: Intel(R) Core(TM) Ultra 5 125H**.
 
 | Benchmark                                          | Iterations |             ns/op |   B/op | allocs/op |
 |----------------------------------------------------|-----------:|------------------:|-------:|----------:|
-| BenchmarkPublishSingleSubscriber-18                | 10 018 934 |       122.4 ns/op |     0 |         0 |
-| BenchmarkMultipleSubscribers-18                    |    196 680 |       6 172 ns/op |     0 |         0 |
-| BenchmarkMultiPublisherSingleSubscriber-18         |    397 332 |       2 833 ns/op |   304 |        12 |
-| BenchmarkMultiPublisherMultipleSubscribers-18      |     73 789 |      16 982 ns/op |   304 |        12 |
-| BenchmarkUltraLargeSubscribersSinglePublisher-18   |        402 |   3 631 646 ns/op |     0 |         0 |
-| BenchmarkPublishChannelSizes/Small-18              | 10 672 664 |       114.4 ns/op |     0 |         0 |
-| BenchmarkPublishChannelSizes/Medium-18             | 10 732 318 |       120.2 ns/op |     0 |         0 |
-| BenchmarkPublishChannelSizes/Large-18              | 10 731 602 |       113.8 ns/op |     0 |         0 |
-| BenchmarkPublishWithTimeout-18                     |  2 497 294 |       477.5 ns/op |   248 |         3 |
-| BenchmarkHighLoadParallel-18                       |      9 981 |     118 695 ns/op |     3 |         0 |
-| BenchmarkSubscribes-18                             |     12 158 |     105 561 ns/op | 82315 |       562 |
-| BenchmarkBrokerTopics/10-18                        |  4 792 022 |       268.8 ns/op |   256 |         3 |
-| BenchmarkBrokerTopics/100-18                       |    866 445 |       1 388 ns/op |  1888 |         3 |
-| BenchmarkBrokerTopics/1000-18                      |     95 181 |      12 637 ns/op | 16480 |         3 |
-| BenchmarkStructPayload-18                          | 10 343 504 |       117.5 ns/op |     0 |         0 |
-| BenchmarkPublishAutoCreateTopic-18                 |  1 548 001 |       697.5 ns/op |   208 |         4 |
+| BenchmarkPublishSingleSubscriber-18                | 11 088 721 |       107.7 ns/op |     0 |         0 |
+| BenchmarkMultipleSubscribers-18                    |    185 701 |       6 459 ns/op |     0 |         0 |
+| BenchmarkMultiPublisherSingleSubscriber-18         |    472 838 |       2 507 ns/op |   304 |        12 |
+| BenchmarkMultiPublisherMultipleSubscribers-18      |     75 205 |      15 996 ns/op |   304 |        12 |
+| BenchmarkUltraLargeSubscribersSinglePublisher-18   |        606 |   2 017 115 ns/op |  1028 |         0 |
+| BenchmarkPublishChannelSizes/Small-18              | 11 431 624 |       106.6 ns/op |     0 |         0 |
+| BenchmarkPublishChannelSizes/Medium-18             | 10 783 516 |       105.2 ns/op |     0 |         0 |
+| BenchmarkPublishChannelSizes/Large-18              | 11 358 231 |       104.4 ns/op |     0 |         0 |
+| BenchmarkPublishWithTimeout-18                     |  3 303 381 |       375.2 ns/op |   248 |         3 |
+| BenchmarkHighLoadParallel-18                       |     14 727 |      80 579 ns/op |  3795 |         0 |
+| BenchmarkSubscribes-18                             |     19 392 |      61 532 ns/op | 71919 |       320 |
+| BenchmarkBrokerTopics/10-18                        |  6 745 747 |       173.1 ns/op |   160 |         1 |
+| BenchmarkBrokerTopics/100-18                       |    982 081 |       1 152 ns/op |  1792 |         1 |
+| BenchmarkBrokerTopics/1000-18                      |    108 994 |      10 800 ns/op | 16384 |         1 |
+| BenchmarkStructPayload-18                          | 10 919 252 |       107.9 ns/op |     0 |         0 |
+| BenchmarkPublishAutoCreateTopic-18                 |    833 221 |       2 138 ns/op |  3083 |         8 |
+
+_Note: `allocs/op = 0` on the fan-out benchmarks means the library's hot path
+is zero-allocation (the snapshot slice is recycled via `sync.Pool`). The
+non-zero `B/op` on `UltraLarge` / `HighLoadParallel` comes from the benchmark
+harness's drain goroutines (spawned per run to keep subscriber channels
+empty), not from library code._
 
 ---
 
