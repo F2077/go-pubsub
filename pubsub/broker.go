@@ -125,13 +125,14 @@ func (b *Broker[T]) Capacity() uint32 {
 // avoid a subscription→broker lock-order deadlock. A freshly-emptied topic
 // may still appear in the returned slice for a short window.
 func (b *Broker[T]) Topics() []string {
-	if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+	debug := b.logger.Enabled(context.TODO(), slog.LevelDebug)
+	if debug {
 		b.logger.Debug("Broker.Topics acquired read lock", slog.Any("broker", b))
 	}
 	b.rwMutex.RLock()
 	defer func() {
 		b.rwMutex.RUnlock()
-		if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		if debug {
 			b.logger.Debug("Broker.Topics released read lock", slog.Any("broker", b))
 		}
 	}()
@@ -197,13 +198,14 @@ func (b *Broker[T]) createOrLoadSubscription(topic string) (*subscription[T], er
 }
 
 func (b *Broker[T]) tryRemoveSubscription(topic string) {
-	if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+	debug := b.logger.Enabled(context.TODO(), slog.LevelDebug)
+	if debug {
 		b.logger.Debug("Broker.tryRemoveSubscription acquired write lock", slog.Any("broker", b))
 	}
 	b.rwMutex.Lock()
 	defer func() {
 		b.rwMutex.Unlock()
-		if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		if debug {
 			b.logger.Debug("Broker.tryRemoveSubscription released write lock", slog.Any("broker", b))
 		}
 	}()
@@ -244,13 +246,14 @@ func newSubscription[T any](logger *slog.Logger, topic string, broker *Broker[T]
 }
 
 func (s *subscription[T]) isEmpty() bool {
-	if s.logger.Enabled(context.TODO(), slog.LevelDebug) {
+	debug := s.logger.Enabled(context.TODO(), slog.LevelDebug)
+	if debug {
 		s.logger.Debug("subscription.isEmpty acquired read lock")
 	}
 	s.rwMutex.RLock()
 	defer func() {
 		s.rwMutex.RUnlock()
-		if s.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		if debug {
 			s.logger.Debug("subscription.isEmpty released read lock")
 		}
 	}()
@@ -258,13 +261,14 @@ func (s *subscription[T]) isEmpty() bool {
 }
 
 func (s *subscription[T]) addSubscriber(subscriber *Subscriber[T]) {
-	if s.logger.Enabled(context.TODO(), slog.LevelDebug) {
+	debug := s.logger.Enabled(context.TODO(), slog.LevelDebug)
+	if debug {
 		s.logger.Debug("subscription.addSubscriber acquired write lock")
 	}
 	s.rwMutex.Lock()
 	defer func() {
 		s.rwMutex.Unlock()
-		if s.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		if debug {
 			s.logger.Debug("subscription.addSubscriber released write lock")
 		}
 	}()
@@ -273,13 +277,14 @@ func (s *subscription[T]) addSubscriber(subscriber *Subscriber[T]) {
 }
 
 func (s *subscription[T]) removeSubscriber(subscriber *Subscriber[T]) {
-	if s.logger.Enabled(context.TODO(), slog.LevelDebug) {
+	debug := s.logger.Enabled(context.TODO(), slog.LevelDebug)
+	if debug {
 		s.logger.Debug("subscription.removeSubscriber acquired write lock")
 	}
 	s.rwMutex.Lock()
 	defer func() {
 		s.rwMutex.Unlock()
-		if s.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		if debug {
 			s.logger.Debug("subscription.removeSubscriber released write lock")
 		}
 	}()

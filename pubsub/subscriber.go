@@ -116,12 +116,13 @@ func (s *Subscriber[T]) Subscribe(topic string, opts ...SubscriptionOption[T]) (
 	}
 
 	s.mutex.Lock()
-	if s.broker.logger.Enabled(context.TODO(), slog.LevelDebug) {
+	debug := s.broker.logger.Enabled(context.TODO(), slog.LevelDebug)
+	if debug {
 		s.broker.logger.Debug("Subscriber.Subscribe acquired lock", slog.Any("subscriber", s))
 	}
 	defer func() {
 		s.mutex.Unlock()
-		if s.broker.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		if debug {
 			s.broker.logger.Debug("Subscriber.Subscribe released lock", slog.Any("subscriber", s))
 		}
 	}()
@@ -241,12 +242,13 @@ func (s *Subscriber[T]) Close() error {
 
 func (s *Subscriber[T]) unsubscribe(sub *Subscription[T]) error {
 	s.mutex.Lock()
-	if s.broker.logger.Enabled(context.TODO(), slog.LevelDebug) {
+	debug := s.broker.logger.Enabled(context.TODO(), slog.LevelDebug)
+	if debug {
 		s.broker.logger.Debug("Subscriber.unsubscribe acquired lock", slog.Any("subscriber", s))
 	}
 	defer func() {
 		s.mutex.Unlock()
-		if s.broker.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		if debug {
 			s.broker.logger.Debug("Subscriber.unsubscribe released lock", slog.Any("subscriber", s))
 		}
 	}()
