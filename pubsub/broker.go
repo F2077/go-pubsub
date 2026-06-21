@@ -306,15 +306,23 @@ func (s *subscription[T]) deliver(message T) {
 	}
 
 	for _, subscriber := range snapshot {
-		// 仅发送到对应主题的 Channel
-		if ch, ok := subscriber.channels.Load(s.topic); ok {
+		// 持 subscriber.mutex 读 channel 并 send：与 unsubscribe 的持锁 close 互斥，
+		// race-safe 地消除 send-on-closed 竞态。锁内只做 non-blocking send（default
+		// drop），不阻塞、不长持锁；resetTimer 在锁外调用，避免与 resetTimer 自身
+		// 拿 subscriber.mutex 形成重入死锁。channels[topic] 不存在即订阅者已
+		// unsubscribe，跳过即可。
+		delivered := false
+		subscriber.mutex.Lock()
+		if ch, ok := subscriber.channels[s.topic]; ok {
 			select {
-			case ch.(chan T) <- message:
-				// 消息成功送达，重置定时器
-				subscriber.resetTimer(s.topic)
+			case ch <- message:
+				delivered = true
 			default:
-				// Drop message if channel full
 			}
+		}
+		subscriber.mutex.Unlock()
+		if delivered {
+			subscriber.resetTimer(s.topic)
 		}
 	}
 }

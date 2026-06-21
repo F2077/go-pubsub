@@ -68,7 +68,7 @@ type Subscriber[T any] struct {
 	broker   *Broker[T]
 	topics   map[string]struct{}
 	subs     map[*Subscription[T]]struct{} // 所有存活的 *Subscription；Close 时按此迭代
-	channels sync.Map
+	channels map[string]chan T // subscriber.mutex 保护：deliver 读，Subscribe/unsubscribe 写删
 	closed   bool
 
 	timers map[string]*topicTimer
@@ -80,9 +80,10 @@ func NewSubscriber[T any](broker *Broker[T]) *Subscriber[T] {
 	return &Subscriber[T]{
 		id:     uuid.New().String(),
 		broker: broker,
-		topics: map[string]struct{}{},
-		subs:   map[*Subscription[T]]struct{}{},
-		timers: make(map[string]*topicTimer),
+		topics:   map[string]struct{}{},
+		subs:     map[*Subscription[T]]struct{}{},
+		channels: make(map[string]chan T),
+		timers:   make(map[string]*topicTimer),
 	}
 }
 
@@ -135,8 +136,13 @@ func (s *Subscriber[T]) Subscribe(topic string, opts ...SubscriptionOption[T]) (
 		return nil, err
 	}
 
-	// 创建对应主题的消息通道
-	ch, _ := s.channels.LoadOrStore(topic, make(chan T, options.size))
+	// 创建对应主题的消息通道（re-Subscribe 同 topic 时复用已存在的）
+	ch := make(chan T, options.size)
+	if existing, ok := s.channels[topic]; ok {
+		ch = existing
+	} else {
+		s.channels[topic] = ch
+	}
 
 	// 每条 *Subscription 拥有自己的 errCh。无 timeout 时为 nil——
 	// receive-only nil channel 永久阻塞，对不可能超时的订阅者是正确行为。
@@ -157,7 +163,7 @@ func (s *Subscriber[T]) Subscribe(topic string, opts ...SubscriptionOption[T]) (
 	ret := &Subscription[T]{
 		topic:      topic,
 		subscriber: s,
-		Ch:         ch.(chan T),
+		Ch:         ch,
 		ErrCh:      errCh,
 		errCh:      errCh,
 	}
@@ -271,9 +277,12 @@ func (s *Subscriber[T]) unsubscribe(sub *Subscription[T]) error {
 	delete(s.subs, sub)
 	delete(s.topics, topic)
 
-	// 关闭对应主题的消息通道
-	if ch, ok := s.channels.LoadAndDelete(topic); ok {
-		close(ch.(chan T))
+	// 关闭对应主题的消息通道。持 subscriber.mutex，与 deliver 的持锁 send 互斥，
+	// 故 close 时不可能有在途 send（deliver 要么还没拿锁，要么拿到锁时 channels
+	// 里已无此 topic 而跳过）。
+	if ch, ok := s.channels[topic]; ok {
+		delete(s.channels, topic)
+		close(ch)
 	}
 
 	// 先停掉 fire goroutine：close(tt.done) 让它从 select 醒来。<-tt.exit
