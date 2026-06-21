@@ -68,7 +68,7 @@ type Subscriber[T any] struct {
 	broker   *Broker[T]
 	topics   map[string]struct{}
 	subs     map[*Subscription[T]]struct{} // 所有存活的 *Subscription；Close 时按此迭代
-	channels map[string]chan T // subscriber.mutex 保护：deliver 读，Subscribe/unsubscribe 写删
+	channels map[string]chan T             // subscriber.mutex 保护：deliver 读，Subscribe/unsubscribe 写删
 	closed   bool
 
 	timers map[string]*topicTimer
@@ -78,8 +78,8 @@ type Subscriber[T any] struct {
 // own UUID and an empty topic set. Use Subscribe to attach to topics.
 func NewSubscriber[T any](broker *Broker[T]) *Subscriber[T] {
 	return &Subscriber[T]{
-		id:     uuid.New().String(),
-		broker: broker,
+		id:       uuid.New().String(),
+		broker:   broker,
 		topics:   map[string]struct{}{},
 		subs:     map[*Subscription[T]]struct{}{},
 		channels: make(map[string]chan T),
