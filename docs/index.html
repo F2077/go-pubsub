@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>go-pubsub — fire-and-forget in-process Pub/Sub for Go</title>
+  <meta name="description" content="Lightweight, zero-allocation, in-process Pub/Sub for Go. Fire-and-forget messaging for real-time streaming, gaming events, and live signals." />
+  <link rel="icon" href="assets/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,700;0,9..144,900;1,9..144,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ambient grain + grid overlay -->
+  <div class="ambient" aria-hidden="true"></div>
+
+  <nav class="nav" id="nav">
+    <a class="nav__brand" href="#top">
+      <img src="assets/logo.png" alt="go-pubsub logo" class="nav__logo" />
+      <span>go-pubsub</span>
+    </a>
+    <div class="nav__links">
+      <a href="#features">Features</a>
+      <a href="#quickstart">Quick start</a>
+      <a href="#benchmarks">Benchmarks</a>
+      <a href="#community">Community</a>
+    </div>
+    <a class="nav__cta" href="https://github.com/F2077/go-pubsub" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.81.06 1.23.83 1.23.83.72 1.23 1.88.87 2.34.67.07-.52.28-.87.51-1.07-1.78-.2-3.65-.89-3.65-3.96 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.08-1.87 3.76-3.66 3.95.29.25.54.74.54 1.49v2.21c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+  </nav>
+
+  <main id="top">
+    <!-- ============ HERO ============ -->
+    <header class="hero">
+      <div class="hero__flow" aria-hidden="true">
+        <!-- envelopes drifting L→R, echoing the logo's motion lines -->
+        <span class="env"></span><span class="env"></span><span class="env"></span>
+        <span class="env"></span><span class="env"></span>
+      </div>
+
+      <div class="hero__inner">
+        <img src="assets/logo.png" alt="go-pubsub gopher carrying a message" class="hero__logo" width="220" height="220" />
+
+        <p class="hero__eyebrow">in-process · generics · Go 1.25</p>
+        <h1 class="hero__title">
+          Fire-and-forget<br />
+          <em>Pub/Sub</em> for Go.
+        </h1>
+        <p class="hero__lede">
+          Lightweight, zero-allocation messaging for transient data flows —
+          real-time streaming packets, gaming events, live signals. No
+          persistence, no delivery guarantees, just the fastest one-way path
+          from <span class="mono">Publish</span> to <span class="mono">Subscribe</span>.
+        </p>
+
+        <div class="hero__install" id="install">
+          <span class="hero__install-prompt">$</span>
+          <code class="mono" id="install-cmd">go get github.com/F2077/go-pubsub</code>
+          <button class="hero__copy" id="copy-btn" aria-label="Copy install command">
+            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M0 6.75C0 5.78.78 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .14.11.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5C11.5 15.22 10.72 16 9.75 16h-7.5C1.28 16 0 15.22 0 14.25v-7.5z"/><path fill="currentColor" d="M5 1.75C5 .78 5.78 0 6.75 0h7.5C15.22 0 16 .78 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25v-7.5zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .14.11.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25h-7.5z"/></svg>
+            <span class="hero__copy-label">Copy</span>
+          </button>
+        </div>
+
+        <div class="hero__cta">
+          <a class="btn btn--primary" href="#quickstart">Quick start</a>
+          <a class="btn btn--ghost" href="https://pkg.go.dev/github.com/F2077/go-pubsub" target="_blank" rel="noopener">pkg.go.dev ↗</a>
+        </div>
+
+        <ul class="stat-strip" aria-label="Headline performance numbers">
+          <li class="stat">
+            <span class="stat__num" data-count="107" data-suffix="ns">107ns</span>
+            <span class="stat__label">single-sub publish</span>
+          </li>
+          <li class="stat">
+            <span class="stat__num" data-count="0" data-suffix=" allocs">0 allocs</span>
+            <span class="stat__label">hot path, any fan-out</span>
+          </li>
+          <li class="stat">
+            <span class="stat__num" data-count="10000" data-suffix="" data-format="k">10k</span>
+            <span class="stat__label">subscribers fan-out</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="hero__scroll" aria-hidden="true">
+        <span>scroll</span>
+        <span class="hero__scroll-line"></span>
+      </div>
+    </header>
+
+    <!-- ============ FEATURES ============ -->
+    <section id="features" class="section features">
+      <header class="section__head">
+        <span class="section__index">01</span>
+        <h2>Six properties, one tight package.</h2>
+        <p>Built for the path where a dropped packet is fine and a stalled one is fatal.</p>
+      </header>
+
+      <div class="features__grid">
+        <article class="card">
+          <div class="card__icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M3 13h4l2 4 4-10 2 6h6"/></svg>
+          </div>
+          <h3>Zero persistence</h3>
+          <p>Messages vanish the moment a channel is full or a subscriber times out. No disk, no replay, no acks — the slate is always clean.</p>
+        </article>
+
+        <article class="card">
+          <div class="card__icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M12 7.5V12l3 2"/></svg>
+          </div>
+          <h3>Sliding auto-expiry</h3>
+          <p>Per-topic idle timers reset on every successful publish. Stale subscriptions close themselves and surface <span class="mono">ErrSubscriptionTimeout</span>.</p>
+        </article>
+
+        <article class="card">
+          <div class="card__icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M12 3l8 4v5c0 4.5-3.2 7.6-8 9-4.8-1.4-8-4.5-8-9V7l8-4z"/></svg>
+          </div>
+          <h3>Carefully locked</h3>
+          <p>A snapshot-then-fan-out design with a mutex per subscriber. Race-clean under <span class="mono">-race</span>, deadlock-free by construction.</p>
+        </article>
+
+        <article class="card">
+          <div class="card__icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M4 12h16M4 17h10"/><circle cx="18" cy="17" r="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+          </div>
+          <h3>Bounded capacity</h3>
+          <p>Cap the number of topics per broker; over-cap subscribes return a wrapped <span class="mono">ErrSubscriptionCapacityExceeded</span> you can <span class="mono">errors.Is</span>.</p>
+        </article>
+
+        <article class="card">
+          <div class="card__icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M4 6h7M4 12h11M4 18h7"/><circle cx="17" cy="6" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="13" cy="18" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+          </div>
+          <h3>String topics</h3>
+          <p>One broker, many publishers, many subscribers, many topics. Generic over the payload <span class="mono">T</span> — structs, ints, strings, your type.</p>
+        </article>
+
+        <article class="card card--accent">
+          <div class="card__icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M5 5l14 7-14 7 3-7-3-7z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M8 12h11"/></svg>
+          </div>
+          <h3>sync.Pool snapshot</h3>
+          <p>The fan-out recycles its subscriber snapshot through a pool — <strong>zero allocations on the hot path</strong>, even at ten thousand subscribers.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ============ QUICK START ============ -->
+    <section id="quickstart" class="section quickstart">
+      <header class="section__head">
+        <span class="section__index">02</span>
+        <h2>Five lines to a message.</h2>
+        <p>Broker, publisher, subscriber, subscribe, publish. That's the whole contract.</p>
+      </header>
+
+      <div class="code-block">
+        <div class="code-block__bar">
+          <span class="dot dot--r"></span><span class="dot dot--y"></span><span class="dot dot--g"></span>
+          <span class="code-block__name mono">quickstart.go</span>
+        </div>
+<pre class="code-block__body mono"><code><span class="c-comment">// 1. Create a broker.</span>
+broker, _ := pubsub.<span class="c-fn">NewBroker</span>[<span class="c-type">string</span>]()
+
+<span class="c-comment">// 2. Bind a publisher and a subscriber to it.</span>
+publisher  := pubsub.<span class="c-fn">NewPublisher</span>(broker)
+subscriber := pubsub.<span class="c-fn">NewSubscriber</span>(broker)
+
+<span class="c-comment">// 3. Subscribe. WithTimeout arms a sliding timer
+//    that resets on every successful publish.</span>
+sub, _ := subscriber.<span class="c-fn">Subscribe</span>(<span class="c-str">"alerts"</span>,
+    pubsub.<span class="c-fn">WithChannelSize</span>(pubsub.Medium),
+    pubsub.<span class="c-fn">WithTimeout</span>(<span class="c-num">200</span>*time.Millisecond),
+)
+
+<span class="c-comment">// 4. Publish synchronously. A delivery resets the timer.</span>
+publisher.<span class="c-fn">Publish</span>(<span class="c-str">"alerts"</span>, <span class="c-str">"CPU over 90%!"</span>)
+
+<span class="c-comment">// 5. Receive.</span>
+<span class="c-kw">select</span> {
+<span class="c-kw">case</span> msg := &lt;-sub.Ch:
+    fmt.<span class="c-fn">Println</span>(<span class="c-str">"Received:"</span>, msg)
+<span class="c-kw">case</span> err := &lt;-sub.ErrCh:
+    log.<span class="c-fn">Println</span>(<span class="c-str">"Timeout:"</span>, err)
+}</code></pre>
+      </div>
+
+      <p class="quickstart__run mono">
+        <span class="prompt">$</span> go run ./cmd/quickstart &nbsp;→&nbsp; <span class="out">Received: CPU over 90%!</span>
+      </p>
+    </section>
+
+    <!-- ============ BENCHMARKS ============ -->
+    <section id="benchmarks" class="section bench">
+      <header class="section__head">
+        <span class="section__index">03</span>
+        <h2>The hot path allocates nothing.</h2>
+        <p>Median of 3 runs · Intel Core Ultra 5 125H · <span class="mono">go test -bench -benchmem</span></p>
+      </header>
+
+      <div class="bench__highlight">
+        <div class="bench__hi-num">
+          <span class="bench__hi-value">−24%</span>
+          <span class="bench__hi-label">UltraLarge 10k-sub fan-out vs v1.1.1</span>
+        </div>
+        <div class="bench__hi-num">
+          <span class="bench__hi-value">0</span>
+          <span class="bench__hi-label">allocations per publish, any scale</span>
+        </div>
+        <div class="bench__hi-num">
+          <span class="bench__hi-value">107ns</span>
+          <span class="bench__hi-label">single-subscriber publish</span>
+        </div>
+      </div>
+
+      <div class="bench__table-wrap">
+        <table class="bench__table">
+          <thead>
+            <tr><th>Benchmark</th><th>ns/op</th><th>B/op</th><th>allocs/op</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>PublishSingleSubscriber</td><td class="mono">107.7</td><td class="mono">0</td><td class="mono">0</td></tr>
+            <tr><td>MultipleSubscribers <span class="muted">(100)</span></td><td class="mono">6,459</td><td class="mono">0</td><td class="mono">0</td></tr>
+            <tr><td>MultiPub × MultiSub <span class="muted">(5×50)</span></td><td class="mono">15,996</td><td class="mono">304</td><td class="mono">12</td></tr>
+            <tr class="bench__row-star"><td>UltraLargeSinglePub <span class="muted">(10k)</span></td><td class="mono">2,017,115</td><td class="mono">1,028*</td><td class="mono">0</td></tr>
+            <tr><td>HighLoadParallel <span class="muted">(10k, 180)</span></td><td class="mono">80,579</td><td class="mono">3,795*</td><td class="mono">0</td></tr>
+            <tr><td>PublishWithTimeout</td><td class="mono">375.2</td><td class="mono">248</td><td class="mono">3</td></tr>
+          </tbody>
+        </table>
+        <p class="bench__note muted">* Non-zero B/op with zero allocs comes from the benchmark harness's drain goroutines, not library code.</p>
+      </div>
+
+      <a class="section__more" href="https://github.com/F2077/go-pubsub#benchmark-results" target="_blank" rel="noopener">Full benchmark table →</a>
+    </section>
+
+    <!-- ============ WHEN ============ -->
+    <section id="when" class="section when">
+      <header class="section__head">
+        <span class="section__index">04</span>
+        <h2>Know the tool.</h2>
+        <p>Fire-and-forget is a sharp knife. Use it where drops are cheap and stalls are expensive.</p>
+      </header>
+
+      <div class="when__cols">
+        <div class="when__col when__col--yes">
+          <h3><span class="when__sigil">✓</span> Reach for it</h3>
+          <ul>
+            <li>Real-time streaming-media packet fan-out</li>
+            <li>Low-latency gaming &amp; live-event signals</li>
+            <li>In-process event buses &amp; metrics taps</li>
+            <li>Transient state that's worthless once stale</li>
+          </ul>
+        </div>
+        <div class="when__col when__col--no">
+          <h3><span class="when__sigil">✕</span> Reach for something else</h3>
+          <ul>
+            <li>Persistent queues &amp; durable storage</li>
+            <li>At-least-once / guaranteed delivery</li>
+            <li>Cross-process or network pub/sub</li>
+            <li>Anything where a dropped message is a bug</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ COMMUNITY ============ -->
+    <section id="community" class="section community">
+      <header class="section__head">
+        <span class="section__index">05</span>
+        <h2>Community &amp; standards.</h2>
+        <p>The project ships the full set of community-health files. Play nice; they're short.</p>
+      </header>
+
+      <div class="community__grid">
+        <a class="std-card" href="https://github.com/F2077/go-pubsub/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">
+          <span class="std-card__name mono">CONTRIBUTING.md</span>
+          <span class="std-card__desc">Workflow, branching, commit &amp; review conventions.</span>
+        </a>
+        <a class="std-card" href="https://github.com/F2077/go-pubsub/blob/main/CODE_OF_CONDUCT.md" target="_blank" rel="noopener">
+          <span class="std-card__name mono">CODE_OF_CONDUCT.md</span>
+          <span class="std-card__desc">The norms that keep the project welcoming.</span>
+        </a>
+        <a class="std-card" href="https://github.com/F2077/go-pubsub/blob/main/SECURITY.md" target="_blank" rel="noopener">
+          <span class="std-card__name mono">SECURITY.md</span>
+          <span class="std-card__desc">How to report a vulnerability responsibly.</span>
+        </a>
+        <a class="std-card" href="https://github.com/F2077/go-pubsub/blob/main/CHANGELOG.md" target="_blank" rel="noopener">
+          <span class="std-card__name mono">CHANGELOG.md</span>
+          <span class="std-card__desc">Keep a Changelog format · Semantic Versioning.</span>
+        </a>
+        <a class="std-card" href="https://github.com/F2077/go-pubsub/blob/main/LICENSE" target="_blank" rel="noopener">
+          <span class="std-card__name mono">LICENSE</span>
+          <span class="std-card__desc">MIT — use it, fork it, ship it.</span>
+        </a>
+        <a class="std-card" href="https://pkg.go.dev/github.com/F2077/go-pubsub" target="_blank" rel="noopener">
+          <span class="std-card__name mono">pkg.go.dev</span>
+          <span class="std-card__desc">API reference &amp; rendered godoc.</span>
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer__inner">
+      <div class="footer__brand">
+        <img src="assets/logo.png" alt="" width="36" height="36" />
+        <div>
+          <strong>go-pubsub</strong>
+          <span class="muted">v1.2.0 · MIT License · © 2024–2026 F2077</span>
+        </div>
+      </div>
+      <div class="footer__links">
+        <a href="https://github.com/F2077/go-pubsub">GitHub</a>
+        <a href="https://pkg.go.dev/github.com/F2077/go-pubsub">pkg.go.dev</a>
+        <a href="https://github.com/F2077/go-pubsub/releases">Releases</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
