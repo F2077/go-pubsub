@@ -125,13 +125,14 @@ func (b *Broker[T]) Capacity() uint32 {
 // avoid a subscription→broker lock-order deadlock. A freshly-emptied topic
 // may still appear in the returned slice for a short window.
 func (b *Broker[T]) Topics() []string {
-	if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+	debug := b.logger.Enabled(context.TODO(), slog.LevelDebug)
+	if debug {
 		b.logger.Debug("Broker.Topics acquired read lock", slog.Any("broker", b))
 	}
 	b.rwMutex.RLock()
 	defer func() {
 		b.rwMutex.RUnlock()
-		if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		if debug {
 			b.logger.Debug("Broker.Topics released read lock", slog.Any("broker", b))
 		}
 	}()
@@ -197,13 +198,14 @@ func (b *Broker[T]) createOrLoadSubscription(topic string) (*subscription[T], er
 }
 
 func (b *Broker[T]) tryRemoveSubscription(topic string) {
-	if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+	debug := b.logger.Enabled(context.TODO(), slog.LevelDebug)
+	if debug {
 		b.logger.Debug("Broker.tryRemoveSubscription acquired write lock", slog.Any("broker", b))
 	}
 	b.rwMutex.Lock()
 	defer func() {
 		b.rwMutex.Unlock()
-		if b.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		if debug {
 			b.logger.Debug("Broker.tryRemoveSubscription released write lock", slog.Any("broker", b))
 		}
 	}()
@@ -218,28 +220,40 @@ type subscription[T any] struct {
 	logger  *slog.Logger
 	rwMutex sync.RWMutex
 
-	topic       string
-	broker      *Broker[T]
-	subscribers map[string]*Subscriber[T]
+	topic        string
+	broker       *Broker[T]
+	subscribers  map[string]*Subscriber[T]
+	snapshotPool sync.Pool // 复用 deliver 的快照切片，消除多订阅热路径分配
 }
 
 func newSubscription[T any](logger *slog.Logger, topic string, broker *Broker[T]) *subscription[T] {
-	return &subscription[T]{
+	s := &subscription[T]{
 		logger:      logger,
 		topic:       topic,
 		broker:      broker,
 		subscribers: make(map[string]*Subscriber[T]),
 	}
+	// 复用 deliver 的快照切片。元素是 *[]*Subscriber[T]（指针）而非
+	// []*Subscriber[T]（切片）：Pool 的 Get/Put 接口是 any，存指针只把一个
+	// 8 字节指针装箱进 interface，避免整个 slice header（指针+len+cap）装箱
+	// 逃逸；Get 回来后原地 *ptr = (*ptr)[:0] 复用底层数组，下次 append 直接
+	// 长在该数组上，容量会自然适应本 subscription 的稳态订阅者数。
+	s.snapshotPool.New = func() any {
+		slc := make([]*Subscriber[T], 0, 8)
+		return &slc
+	}
+	return s
 }
 
 func (s *subscription[T]) isEmpty() bool {
-	if s.logger.Enabled(context.TODO(), slog.LevelDebug) {
+	debug := s.logger.Enabled(context.TODO(), slog.LevelDebug)
+	if debug {
 		s.logger.Debug("subscription.isEmpty acquired read lock")
 	}
 	s.rwMutex.RLock()
 	defer func() {
 		s.rwMutex.RUnlock()
-		if s.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		if debug {
 			s.logger.Debug("subscription.isEmpty released read lock")
 		}
 	}()
@@ -247,13 +261,14 @@ func (s *subscription[T]) isEmpty() bool {
 }
 
 func (s *subscription[T]) addSubscriber(subscriber *Subscriber[T]) {
-	if s.logger.Enabled(context.TODO(), slog.LevelDebug) {
+	debug := s.logger.Enabled(context.TODO(), slog.LevelDebug)
+	if debug {
 		s.logger.Debug("subscription.addSubscriber acquired write lock")
 	}
 	s.rwMutex.Lock()
 	defer func() {
 		s.rwMutex.Unlock()
-		if s.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		if debug {
 			s.logger.Debug("subscription.addSubscriber released write lock")
 		}
 	}()
@@ -262,13 +277,14 @@ func (s *subscription[T]) addSubscriber(subscriber *Subscriber[T]) {
 }
 
 func (s *subscription[T]) removeSubscriber(subscriber *Subscriber[T]) {
-	if s.logger.Enabled(context.TODO(), slog.LevelDebug) {
+	debug := s.logger.Enabled(context.TODO(), slog.LevelDebug)
+	if debug {
 		s.logger.Debug("subscription.removeSubscriber acquired write lock")
 	}
 	s.rwMutex.Lock()
 	defer func() {
 		s.rwMutex.Unlock()
-		if s.logger.Enabled(context.TODO(), slog.LevelDebug) {
+		if debug {
 			s.logger.Debug("subscription.removeSubscriber released write lock")
 		}
 	}()
@@ -295,26 +311,47 @@ func (s *subscription[T]) deliver(message T) {
 	if debug {
 		s.logger.Debug("subscription.deliver acquired read lock")
 	}
+	// 从 Pool 借一个复用的切片指针，原地 snapshot 订阅者集合，消除多订阅
+	// 热路径上的分配（N=10000 时原本每次 ~80KB）。sync.Pool 并发安全，
+	// 并发的 deliver 各自从池里 Get 到独立的切片实例，互不干扰。
 	s.rwMutex.RLock()
-	snapshot := make([]*Subscriber[T], 0, len(s.subscribers))
+	ptr := s.snapshotPool.Get().(*[]*Subscriber[T])
+	*ptr = (*ptr)[:0]
 	for _, sub := range s.subscribers {
-		snapshot = append(snapshot, sub)
+		*ptr = append(*ptr, sub)
 	}
 	s.rwMutex.RUnlock()
+	snapshot := *ptr
 	if debug {
 		s.logger.Debug("subscription.deliver released read lock")
 	}
 
 	for _, subscriber := range snapshot {
-		// 仅发送到对应主题的 Channel
-		if ch, ok := subscriber.channels.Load(s.topic); ok {
+		// 持 subscriber.mutex 读 channel 并 send：与 unsubscribe 的持锁 close 互斥，
+		// race-safe 地消除 send-on-closed 竞态。锁内只做 non-blocking send（default
+		// drop），不阻塞、不长持锁；resetTimer 在锁外调用，避免与 resetTimer 自身
+		// 拿 subscriber.mutex 形成重入死锁。channels[topic] 不存在即订阅者已
+		// unsubscribe，跳过即可。
+		delivered := false
+		subscriber.mutex.Lock()
+		if ch, ok := subscriber.channels[s.topic]; ok {
 			select {
-			case ch.(chan T) <- message:
-				// 消息成功送达，重置定时器
-				subscriber.resetTimer(s.topic)
+			case ch <- message:
+				delivered = true
 			default:
-				// Drop message if channel full
 			}
 		}
+		subscriber.mutex.Unlock()
+		if delivered {
+			subscriber.resetTimer(s.topic)
+		}
 	}
+	// 归还切片供下次复用。先清掉本次填入的 *Subscriber 指针，避免 Pool
+	// slice 的底层数组在下次 GC 前继续引用它们、阻止已退订的 Subscriber
+	// 被回收（下次 Get 的 [:0] 只重置 len 不清元素，所以这里必须显式清）。
+	// fan-out 不会 panic，用显式 Put 而非 defer，省掉热路径上的 defer 开销。
+	for i := range snapshot {
+		snapshot[i] = nil
+	}
+	s.snapshotPool.Put(ptr)
 }

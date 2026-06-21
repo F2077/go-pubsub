@@ -337,8 +337,7 @@ func TestSubscriber_Subscribes(t *testing.T) {
 	assert.Equal(t, len(topics), len(subscriber.topics))
 	for _, topic := range topics {
 		assert.Contains(t, subscriber.topics, topic)
-		value, _ := subscriber.channels.Load(topic)
-		assert.NotNil(t, value)
+		assert.Contains(t, subscriber.channels, topic)
 	}
 	subscriber.mutex.Unlock()
 
