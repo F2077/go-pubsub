@@ -218,18 +218,29 @@ type subscription[T any] struct {
 	logger  *slog.Logger
 	rwMutex sync.RWMutex
 
-	topic       string
-	broker      *Broker[T]
-	subscribers map[string]*Subscriber[T]
+	topic        string
+	broker       *Broker[T]
+	subscribers  map[string]*Subscriber[T]
+	snapshotPool sync.Pool // 复用 deliver 的快照切片，消除多订阅热路径分配
 }
 
 func newSubscription[T any](logger *slog.Logger, topic string, broker *Broker[T]) *subscription[T] {
-	return &subscription[T]{
+	s := &subscription[T]{
 		logger:      logger,
 		topic:       topic,
 		broker:      broker,
 		subscribers: make(map[string]*Subscriber[T]),
 	}
+	// 复用 deliver 的快照切片。元素是 *[]*Subscriber[T]（指针）而非
+	// []*Subscriber[T]（切片）：Pool 的 Get/Put 接口是 any，存指针只把一个
+	// 8 字节指针装箱进 interface，避免整个 slice header（指针+len+cap）装箱
+	// 逃逸；Get 回来后原地 *ptr = (*ptr)[:0] 复用底层数组，下次 append 直接
+	// 长在该数组上，容量会自然适应本 subscription 的稳态订阅者数。
+	s.snapshotPool.New = func() any {
+		slc := make([]*Subscriber[T], 0, 8)
+		return &slc
+	}
+	return s
 }
 
 func (s *subscription[T]) isEmpty() bool {
@@ -295,12 +306,17 @@ func (s *subscription[T]) deliver(message T) {
 	if debug {
 		s.logger.Debug("subscription.deliver acquired read lock")
 	}
+	// 从 Pool 借一个复用的切片指针，原地 snapshot 订阅者集合，消除多订阅
+	// 热路径上的分配（N=10000 时原本每次 ~80KB）。sync.Pool 并发安全，
+	// 并发的 deliver 各自从池里 Get 到独立的切片实例，互不干扰。
 	s.rwMutex.RLock()
-	snapshot := make([]*Subscriber[T], 0, len(s.subscribers))
+	ptr := s.snapshotPool.Get().(*[]*Subscriber[T])
+	*ptr = (*ptr)[:0]
 	for _, sub := range s.subscribers {
-		snapshot = append(snapshot, sub)
+		*ptr = append(*ptr, sub)
 	}
 	s.rwMutex.RUnlock()
+	snapshot := *ptr
 	if debug {
 		s.logger.Debug("subscription.deliver released read lock")
 	}
@@ -325,4 +341,7 @@ func (s *subscription[T]) deliver(message T) {
 			subscriber.resetTimer(s.topic)
 		}
 	}
+	// 归还切片供下次复用。fan-out 不会 panic（持锁 send、resetTimer 均不
+	// panic），用显式 Put 而非 defer，省掉热路径上的 defer 注册开销。
+	s.snapshotPool.Put(ptr)
 }
