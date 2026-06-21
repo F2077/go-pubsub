@@ -44,11 +44,16 @@ go test -count=10 -race ./pubsub/...
 go run ./cmd/quickstart
 ```
 
-There is no Makefile, linter config, or CI file in the repo — `go test`/`go vet` is the entire toolchain story.
+The toolchain story is `make` + CI, not just `go test`/`go vet`:
+- `Makefile` — `make test` / `make bench` / `make lint` / `make cover` wrap the common commands.
+- `.golangci.yml` — v2 schema; enables `govet`, `ineffassign`, `unused`, `revive`, `staticcheck`.
+- `.github/workflows/test.yml` — on push/PR runs: `go mod tidy -diff`, a **gofmt gate** (`gofmt -l` must be empty — always `gofmt -w` before committing!), `go vet`, `go test -race -count=1 -coverprofile`, and `golangci-lint v2.12.2` (`only-new-issues: true`). So run `gofmt -w` + `go vet` + `go test -race` locally before pushing, or CI will go red.
 
 The `infertypeargs` lint (e.g. `WithLogger[string]` when `T` is inferred)
 fires across every file in the codebase. It is pre-existing stylistic
-noise, not a correctness issue, and is out of scope for unrelated work.
+noise, not a correctness issue; it is explicitly excluded in
+`.golangci.yml` (staticcheck "unnecessary type arguments"), so it will
+not fail CI. It is out of scope for unrelated work.
 
 ## Code layout
 
