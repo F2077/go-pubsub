@@ -2,7 +2,10 @@
 
 package pubsub
 
-import "testing"
+import (
+	"runtime/debug"
+	"testing"
+)
 
 // TestDeliverZeroAlloc 断言多订阅者场景下稳态 Publish 是零分配的。
 //
@@ -39,6 +42,12 @@ func TestDeliverZeroAlloc(t *testing.T) {
 			_ = s.Close()
 		}
 	})
+
+	// 禁 GC 到测试结束：sync.Pool 在 GC 时被 runtime 清空，一旦清空 Get 就
+	// 走 New（分配），会让零分配断言 flaky。关掉 GC 让 warmup 填的 Pool 在
+	// 测量期间稳定复用。
+	oldGC := debug.SetGCPercent(-1)
+	t.Cleanup(func() { debug.SetGCPercent(oldGC) })
 
 	// warmup：首次 Publish 会 createOrLoadSubscription（建 topic + 每个
 	// subscriber 的 channel），那一次有分配；稳态测的是后续 Publish。

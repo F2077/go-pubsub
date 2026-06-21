@@ -138,10 +138,9 @@ func (s *Subscriber[T]) Subscribe(topic string, opts ...SubscriptionOption[T]) (
 	}
 
 	// 创建对应主题的消息通道（re-Subscribe 同 topic 时复用已存在的）
-	ch := make(chan T, options.size)
-	if existing, ok := s.channels[topic]; ok {
-		ch = existing
-	} else {
+	ch, ok := s.channels[topic]
+	if !ok {
+		ch = make(chan T, options.size)
 		s.channels[topic] = ch
 	}
 

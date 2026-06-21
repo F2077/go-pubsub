@@ -346,7 +346,12 @@ func (s *subscription[T]) deliver(message T) {
 			subscriber.resetTimer(s.topic)
 		}
 	}
-	// 归还切片供下次复用。fan-out 不会 panic（持锁 send、resetTimer 均不
-	// panic），用显式 Put 而非 defer，省掉热路径上的 defer 注册开销。
+	// 归还切片供下次复用。先清掉本次填入的 *Subscriber 指针，避免 Pool
+	// slice 的底层数组在下次 GC 前继续引用它们、阻止已退订的 Subscriber
+	// 被回收（下次 Get 的 [:0] 只重置 len 不清元素，所以这里必须显式清）。
+	// fan-out 不会 panic，用显式 Put 而非 defer，省掉热路径上的 defer 开销。
+	for i := range snapshot {
+		snapshot[i] = nil
+	}
 	s.snapshotPool.Put(ptr)
 }

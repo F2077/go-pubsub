@@ -3,6 +3,7 @@ package pubsub
 import (
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -31,6 +32,7 @@ func TestConcurrentPublishWithDynamicSubscribe(t *testing.T) {
 
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
+	var subErrs atomic.Int32 // 记 Subscribe 失败：订阅已存在的 topic 不该失败，失败即 bug
 
 	// 持续发布者
 	const numPub = 4
@@ -60,7 +62,9 @@ func TestConcurrentPublishWithDynamicSubscribe(t *testing.T) {
 			for j := 0; j < 40; j++ {
 				sub, err := NewSubscriber[int](broker).Subscribe(topic)
 				if err != nil {
-					return
+					// 订阅已存在的 topic 不该失败；记下来，别静默早退让测试假绿
+					subErrs.Add(1)
+					continue
 				}
 				// 短暂收一点，制造 snapshot 与 send 的重叠窗口
 				deadline := time.After(2 * time.Millisecond)
@@ -97,4 +101,8 @@ func TestConcurrentPublishWithDynamicSubscribe(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	close(stop)
 	wg.Wait()
+
+	if n := subErrs.Load(); n > 0 {
+		t.Errorf("unexpected Subscribe failures: %d (subscribing to an existing topic should not fail)", n)
+	}
 }
