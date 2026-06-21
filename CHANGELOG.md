@@ -4,6 +4,65 @@ All notable changes to `go-pubsub` are documented in this file. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [v1.2.0] - 2026-06-21
+
+### Fixed
+- **`send-on-closed-channel` race in `deliver`** (pre-existing; could
+  crash the process). The fan-out read each subscriber's per-topic
+  channel via `channels.Load` then `select`-sent; a concurrent
+  `unsubscribe` could `close(ch)` in that window, **panicking the
+  publisher goroutine**. `Subscriber.channels` is now a
+  `subscriber.mutex`-guarded `map[string]chan T`, and `deliver` holds
+  that mutex while reading the channel and sending — serializing send
+  against `unsubscribe`'s close. `resetTimer` runs outside the lock to
+  avoid re-entrant deadlock. Covered by the new
+  `TestConcurrentPublishWithDynamicSubscribe` (4 publishers + 8 dynamic
+  subscribe/close goroutines, under `-race`). No public-API change;
+  lock order unchanged (deadlock-free).
+
+### Changed (performance)
+- **Zero-allocation fan-out snapshot via `sync.Pool`.** `deliver`
+  allocated a fresh snapshot slice on every `Publish` (~80KB at 10k
+  subscribers, GC-thrashing under concurrent publishers). Now recycled
+  per-`subscription` via a `sync.Pool` of `*[]*Subscriber[T]` (pointer
+  element so only 8 bytes box into the `Get`/`Put` interface{}).
+  Pointers are nil'd before `Put` so the pool's backing array doesn't
+  keep unsubscribed subscribers alive until GC.
+- **`Subscriber.channels`: `sync.Map` → `map[string]chan T` + mutex.**
+  Part of the race fix, and faster: `mutex` (~15ns) beats
+  `sync.Map.Load` (~30ns) + type assertion once N grows.
+
+  Bench deltas (median of 3, Intel Core Ultra 5 125H):
+
+  | Benchmark | v1.1.1 | v1.2.0 | Δ |
+  |---|---|---|---|
+  | `UltraLargeSubscribersSinglePublisher` (10k subs) | 2.67 ms, 1 alloc | 2.03 ms, 0 alloc | **−24 %** |
+  | `HighLoadParallel` (10k, 180 pub) | 113 µs, 1 alloc | 84 µs, 0 alloc | **−26 %** |
+  | `MultiPublisherMultipleSubscribers` (5×50) | 18.7 µs, 17 alloc | 16.1 µs, 12 alloc | **−14 %** |
+  | `PublishSingleSubscriber` | 104 ns | 109 ns | +5 ns (mutex) |
+
+  Single-subscriber pays ~5 ns for the mutex; multi-subscriber fan-out
+  (the core fire-and-forget use case) wins 14–26 % and drops to zero
+  allocation. Trade-off is deliberate.
+
+### Changed (docs)
+- README benchmark table refreshed (median of 3); note explains the
+  non-zero `B/op` on the big fan-out benchmarks comes from the
+  harness's drain goroutines, not library code.
+- `CLAUDE.md`: Architecture / Locking-pattern / Gotchas updated for the
+  `channels` map+mutex model, the `sync.Pool` snapshot, and the new
+  `deliver`↔`subscriber.mutex` contract; Code layout lists the new
+  `concurrent_test.go` / `perf_test.go`; the stale "no CI file" claim
+  is corrected (Makefile + `.golangci.yml` + `.github/workflows/test.yml`
+  all exist, with a gofmt gate).
+
+### Internal
+- `concurrent_test.go` (new): race safety-net — concurrent Publish +
+  dynamic Subscribe/Close on the same topic.
+- `perf_test.go` (new, `//go:build !race`): zero-alloc assertion
+  (`testing.AllocsPerRun` with GC disabled so the `sync.Pool` can't be
+  cleared mid-measurement).
+
 ## [v1.1.1] - 2026-06-13
 
 ### Fixed
@@ -272,6 +331,7 @@ gating them). `BenchmarkPublishSingleSubscriber` stays at ~108 ns/op,
 - README-cited benchmark suite (`bench_test.go`).
 - `cmd/quickstart` runnable example.
 
+[v1.2.0]: https://github.com/F2077/go-pubsub/compare/v1.1.1...v1.2.0
 [v1.1.1]: https://github.com/F2077/go-pubsub/compare/v1.1.0...v1.1.1
 [v1.1.0]: https://github.com/F2077/go-pubsub/compare/v1.0.0...v1.1.0
 [v1.0.0]: https://github.com/F2077/go-pubsub/releases/tag/v1.0.0
