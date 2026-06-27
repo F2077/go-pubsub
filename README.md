@@ -186,6 +186,13 @@ non-zero `B/op` on `UltraLarge` / `HighLoadParallel` comes from the benchmark
 harness's drain goroutines (spawned per run to keep subscriber channels
 empty), not from library code._
 
+> **Benchmarks are environment-sensitive.** The `allocs/op` column is
+> deterministic and fully reproducible across runs. The `ns/op` numbers
+> vary with machine load and CPU temperature — on a busy machine the
+> parallel benchmarks (`HighLoadParallel`, `MultiPublisher*`) can swing
+> ±50% or more run-to-run. Treat absolute ns/op as approximate; the
+> zero-allocation invariant is the reliable claim.
+
 ---
 
 ## Contributing

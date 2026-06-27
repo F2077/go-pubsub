@@ -300,9 +300,7 @@ ul { list-style: none; }
 .card h3 { font-family: var(--ff-display); font-weight: 600; font-size: 22px; letter-spacing: -.01em; }
 .card p { color: var(--mist); font-size: 15.5px; }
 .card .mono { color: var(--bone); background: var(--ink-3); padding: 1px 6px; border-radius: 5px; font-size: .88em; }
-.card--accent { background: linear-gradient(160deg, rgba(122,63,158,.22), var(--ink)); }
-.card--accent .card__icon { color: var(--grape-2); background: rgba(157,95,196,.14); border-color: rgba(157,95,196,.3); }
-.card--accent strong { color: var(--solar); font-weight: 600; }
+.card strong { color: var(--solar); font-weight: 600; }
 
 /* ===================================================================
    QUICKSTART — terminal code block

@@ -141,7 +141,7 @@
           <p>One broker, many publishers, many subscribers, many topics. Generic over the payload <span class="mono">T</span> — structs, ints, strings, your type.</p>
         </article>
 
-        <article class="card card--accent">
+        <article class="card">
           <div class="card__icon">
             <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M5 5l14 7-14 7 3-7-3-7z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M8 12h11"/></svg>
           </div>
@@ -206,7 +206,7 @@ publisher.<span class="c-fn">Publish</span>(<span class="c-str">"alerts"</span>,
       <div class="bench__highlight">
         <div class="bench__hi-num">
           <span class="bench__hi-value">−24%</span>
-          <span class="bench__hi-label">UltraLarge 10k-sub fan-out vs v1.1.1</span>
+          <span class="bench__hi-label">UltraLarge 10k-sub fan-out vs v1.1.1, same machine</span>
         </div>
         <div class="bench__hi-num">
           <span class="bench__hi-value">0</span>
@@ -233,6 +233,7 @@ publisher.<span class="c-fn">Publish</span>(<span class="c-str">"alerts"</span>,
           </tbody>
         </table>
         <p class="bench__note muted">* Non-zero B/op with zero allocs comes from the benchmark harness's drain goroutines, not library code.</p>
+        <p class="bench__note muted">ns/op is machine- and load-dependent — the parallel benchmarks can swing ±50% run-to-run; <strong style="color:var(--bone)">allocs/op is deterministic</strong> and reproducible.</p>
       </div>
 
       <a class="section__more" href="https://github.com/F2077/go-pubsub#benchmark-results" target="_blank" rel="noopener">Full benchmark table →</a>
